@@ -8,6 +8,8 @@ Accepted
 
 Amends [6. Render to style-neutral lines](0006-render-to-style-neutral-lines.md)
 
+Amended by [8. Glued inline elements wrap as one word](0008-glued-inline-elements-wrap-as-one-word.md)
+
 ## Context
 
 asqr renders the intro, the question texts and the option descriptions
@@ -145,6 +147,7 @@ Autolinks are `Link` nodes and render as links under both settings.
 - `Html::Drop` keeps the 1.5.0 rendering, as an explicit case of the
   renderer instead of a side effect of the fallback.
 - Text and HTML glued together without a space, `Vec` and `<String>`,
-  are separate nodes and can wrap apart at the end of a line, as any two
-  adjacent inline elements can.
+  are separate nodes. In 1.6.0 they could wrap apart at the end of a
+  line, as any two adjacent inline elements could. Since 1.6.1 they wrap
+  as one word, see ADR 0008.
 - Adding an option or a variant does not break code outside patine.
