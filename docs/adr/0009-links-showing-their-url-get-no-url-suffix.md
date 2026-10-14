@@ -6,6 +6,8 @@ Date: 2026-10-14
 
 Accepted
 
+Amended in patine 1.6.3 (see the end)
+
 ## Context
 
 patine draws a link as its underlined text followed by its URL in dimmed
@@ -35,9 +37,8 @@ or equals its URL without a leading `mailto:`. Every other link keeps the
 suffix, `www.example.com` included, whose text lacks the `http://` of its
 URL. Images keep their suffix.
 
-The text compared is the text the link's children draw, without their
-styling: text and inline code, and raw HTML only where `Html::Literal`
-draws it. With `Html::Drop` raw HTML is not drawn and does not count.
+The text compared is the source text of the link's children: text, inline
+code and raw HTML, without their styling.
 
 ## Consequences
 
@@ -46,8 +47,18 @@ draws it. With `Html::Drop` raw HTML is not drawn and does not count.
   the underlined text alone.
 - The snapshots of a bare autolink and of the showcase, which has an
   autolink, changed.
-- A link whose text has raw HTML around the URL keeps its suffix with
-  `Html::Literal`, which draws the HTML. With `Html::Drop` it draws the
-  URL alone and gets no suffix. patine 1.6.2 compared the HTML under
-  both options and drew `https://x.org (https://x.org)` for
-  `[<b>https://x.org</b>](https://x.org)` with `Html::Drop`.
+- A link whose text has raw HTML around the URL keeps its suffix, also
+  with `Html::Drop`, where the HTML is not shown.
+
+## Amendment (2026-10-14, patine 1.6.3)
+
+The text compared is the text the link's children draw, without their
+styling: text and inline code, and raw HTML only with `Html::Literal`.
+With `Html::Drop` raw HTML is not drawn and does not count.
+
+Comparing the source text showed the URL twice where the HTML is
+dropped: with `Html::Drop`, patine 1.6.2 drew
+`[<b>https://x.org</b>](https://x.org)` as
+`https://x.org (https://x.org)`. With `Html::Literal` that link draws
+`<b>https://x.org</b>`, which differs from its URL, so it keeps the
+suffix.
