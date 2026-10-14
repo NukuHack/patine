@@ -5,6 +5,8 @@
 //! Options that change how a document's source turns into lines. The
 //! defaults render Markdown documents; the alternatives suit short text
 //! fields whose author means every newline and every `<`.
+//! Design rationale lives in
+//! `docs/adr/0007-render-options-for-soft-breaks-and-html.md`.
 
 /// How [`render_lines_with`](crate::render_lines_with) and
 /// [`render_with`](crate::render_with) treat parts of the source that

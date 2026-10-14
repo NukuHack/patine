@@ -8,6 +8,8 @@ Accepted
 
 Amends [3. Direct-write rendering architecture](0003-direct-write-rendering-architecture.md)
 
+Amended by [7. Render options for soft breaks and HTML](0007-render-options-for-soft-breaks-and-html.md)
+
 ## Context
 
 ADR 0003 has the renderer write ANSI escape sequences straight into an
