@@ -44,7 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `**bar**` in `foo**bar**`, before the comma in `**bold**,`, after the
   `(url)` of `[link](url)s`, and with `Html::Literal` between `Vec` and
   `<String>`. A line now breaks only where the source has whitespace or
-  a line break, and in front of a link's or image's `(url)`.
+  a line break, and in front of a link's or image's `(url)`. This
+  changes the default rendering as well: where 1.6.0 broke a line inside
+  such a run, 1.6.1 keeps the run together.
 
 ## [1.6.0] - 2026-10-14
 
@@ -53,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `render_lines_with(input, width, options)` and
   `render_with(input, writer, terminal_width, options)` render with
   `RenderOptions`. `render_lines` and `render` use the defaults, which
-  render exactly as before.
+  render exactly as 1.5.0 did apart from the fixes below.
 - `RenderOptions::soft_breaks` decides what a single newline inside
   running text does: `SoftBreaks::Join` (the default) joins the lines as
   CommonMark specifies, `SoftBreaks::Break` breaks the line like a hard
