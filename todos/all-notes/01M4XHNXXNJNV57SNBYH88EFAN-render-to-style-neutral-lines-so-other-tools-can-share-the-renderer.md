@@ -59,10 +59,15 @@ management, roughly 300 of its 877 lines) is rewritten; `highlight.rs`,
 - `render_lines` and `highlight` are public, documented and tested.
 - `patine` renders every snapshot fixture with the same visible text and
   styling as 1.4.0.
-- patine 1.5.0 is released on crates.io.
+- The 1.5.0 release commit exists; the user publishes it to crates.io.
 
-## Open questions
+## Decisions
 
-- Whether the frontmatter block and image markers need anything beyond
-  spans (they are plain styled text today).
-- Names of the public types, checked against the Rust API guidelines.
+- 2026-10-14, user: the public types are `StyledLine`, `StyledSpan`,
+  `TextStyle`, `Underline` (`None`, `Single`, `Double`) and `AnsiColor`,
+  checked against the Rust API guidelines while implementing.
+- 2026-10-14, user: the frontmatter block and image markers stay plain
+  styled spans in the line model.
+- 2026-10-14, user: the work ends with a release commit for 1.5.0
+  (version bump, dated CHANGELOG entry) but no tag, push or publish;
+  the user publishes.
