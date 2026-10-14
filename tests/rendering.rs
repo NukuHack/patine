@@ -1967,3 +1967,151 @@ fn dropped_html_leaves_its_line_empty_when_soft_breaks_break() {
         ["a", "<span>", "b"]
     );
 }
+
+// =========================================================
+// Glued inline pieces wrap as one word
+// =========================================================
+
+// markdown-rs makes each inline element its own node, so `foo**bar**` is
+// two nodes without whitespace between them. A line may only break where
+// the source has whitespace or a line break. Each test below picks the
+// width at which "aaaa" plus the first glued piece fits exactly, so the
+// next piece is the first one that does not fit.
+
+#[test]
+fn text_glued_to_bold_wraps_as_one_word() {
+    assert_eq!(
+        render_with_width("aaaa foo**bar**", 8),
+        "aaaa\nfoo[bold]bar[]\n"
+    );
+}
+
+#[test]
+fn bold_glued_to_text_wraps_as_one_word() {
+    assert_eq!(
+        render_with_width("aaaa **foo**bar", 8),
+        "aaaa\n[bold]foo[]bar\n"
+    );
+}
+
+#[test]
+fn text_glued_to_inline_code_wraps_as_one_word() {
+    assert_eq!(
+        render_with_width("aaaa x`code`", 6),
+        "aaaa\nx[yellow]code[]\n"
+    );
+}
+
+#[test]
+fn link_url_suffix_glued_to_text_wraps_as_one_word() {
+    // The space in front of `(u)` is the renderer's, not the source's, so
+    // the line may still break there; it may not break after `(u)`.
+    assert_eq!(
+        render_with_width("aaaa [link](u)s", 13),
+        "aaaa [underline]link[]\n[dim](u)[]s\n"
+    );
+}
+
+#[test]
+fn text_glued_to_inline_html_wraps_as_one_word() {
+    assert_eq!(
+        plain_lines_with("Use a Vec<String>", 11, LITERAL),
+        ["Use a", "Vec<String>"]
+    );
+}
+
+#[test]
+fn glued_word_wider_than_the_line_overflows_on_its_own_line() {
+    // Like a single long word: it moves off a line that has content and
+    // is never broken inside, so it overflows the width.
+    assert_eq!(
+        render_with_width("aaaa foo**barbazqux**", 8),
+        "aaaa\nfoo[bold]barbazqux[]\n"
+    );
+    assert_eq!(
+        render_with_width("foo**barbazqux** b", 8),
+        "foo[bold]barbazqux[]\nb\n"
+    );
+}
+
+#[test]
+fn glued_words_never_split_at_any_width() {
+    // Each document glues pieces into the word on the right; whatever the
+    // width, that word shows up whole on one line.
+    let cases = [
+        (
+            "one two foo**bar** three",
+            "foobar",
+            RenderOptions::default(),
+        ),
+        (
+            "one **two**three four",
+            "twothree",
+            RenderOptions::default(),
+        ),
+        ("one a`b`c two", "abc", RenderOptions::default()),
+        ("one ~~x~~*y*z two", "xyz", RenderOptions::default()),
+        ("one [link](u)s two", "(u)s", RenderOptions::default()),
+        ("one a![alt](u)", "a[image:", RenderOptions::default()),
+        ("one Vec<String> two", "Vec<String>", LITERAL),
+        ("- one foo**bar** two", "foobar", RenderOptions::default()),
+        ("> one foo**bar** two", "foobar", RenderOptions::default()),
+        ("# one foo**bar** two", "foobar", RenderOptions::default()),
+    ];
+    for (markdown, word, options) in cases {
+        for width in 1..=30 {
+            let lines = plain_lines_with(markdown, width, options);
+            assert!(
+                lines.iter().any(|line| line.contains(word)),
+                "{word:?} split in {markdown:?} at width {width}:\n{}",
+                lines.join("\n")
+            );
+        }
+    }
+}
+
+#[test]
+fn glued_pieces_keep_their_own_styles() {
+    assert_eq!(
+        render("x **a b**c d ~~e~~`f`[g](u)`h`"),
+        "x [bold]a b[]c d [strike]e[][yellow]f[][underline]g[][dim] (u)[][yellow]h[]\n"
+    );
+}
+
+#[test]
+fn url_suffix_inside_a_glued_run_moves_with_its_tail() {
+    assert_eq!(
+        render_with_width("`a`[b](u)`c`", 4),
+        "[yellow]a[][underline]b[]\n[dim](u)[][yellow]c[]\n"
+    );
+    assert_eq!(plain_lines("x![alt](u)y", 8), ["x[image:", "alt]", "(u)y"]);
+}
+
+#[test]
+fn whitespace_between_inline_pieces_still_breaks_the_line() {
+    assert_eq!(
+        render_with_width("aaaa foo **bar** baz", 8),
+        "aaaa foo\n[bold]bar[] baz\n"
+    );
+    assert_eq!(
+        render_with_width("aaaa **foo** bar", 8),
+        "aaaa [bold]foo[]\nbar\n"
+    );
+}
+
+#[test]
+fn line_breaks_end_a_glued_run() {
+    assert_eq!(render("a**b**\\\nc"), "a[bold]b[]\nc\n");
+    assert_eq!(
+        render_with_options("a**b**\nc", 80, BREAK),
+        "a[bold]b[]\nc\n"
+    );
+}
+
+#[test]
+fn glued_run_in_a_list_item_wraps_under_the_item_text() {
+    assert_eq!(
+        plain_lines("- aaaa foo**bar** baz", 10),
+        ["• aaaa", "  foobar", "  baz"]
+    );
+}

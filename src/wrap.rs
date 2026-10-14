@@ -4,7 +4,7 @@
 
 //! Pure text-wrapping primitives used by the table layout pass.
 //!
-//! `write_word` in `render.rs` is an online streaming wrap that appends
+//! `flush_word` in `render.rs` is an online streaming wrap that appends
 //! to the line under construction and carries per-call state on the
 //! `Renderer`.
 //! Table cells need the opposite shape: an offline, stateless function
@@ -12,7 +12,7 @@
 //! without touching any output sink. This module provides that shape.
 //!
 //! The same greedy-fill heuristic exists in both places. Unifying them
-//! would require rewriting `write_word` to buffer lines before emitting
+//! would require rewriting `flush_word` to buffer lines before emitting
 //! — explicitly out of scope (see the design discussion in the todo 7
 //! plan).
 

@@ -93,12 +93,21 @@ pub struct Renderer {
     /// blank line at the top of the output.
     at_start: bool,
 
-    /// When set, the next word written will be preceded by a space (unless
-    /// it falls at the start of a line), drawn in the held style. Set by
-    /// whitespace in text nodes and by soft breaks, so that spacing between
-    /// adjacent inline nodes is preserved. The style is the one active
-    /// where the whitespace occurs: a space in front of `**bold**` stays
-    /// plain, a space between two struck words stays struck.
+    /// The word under construction, not yet placed on a line. markdown-rs
+    /// makes every inline element its own node, so `foo**bar**`, `Vec`
+    /// followed by inline HTML `<String>` or link text followed by its
+    /// `(url)` suffix arrive as separate pieces. They collect here, each in
+    /// its own style, until whitespace or the end of the line closes the
+    /// word, and then wrap as one: a line breaks only where the source has
+    /// whitespace or a line break.
+    word: StyledLine,
+
+    /// When set, the buffered [`word`](Self::word) is preceded by a space
+    /// (unless it falls at the start of a line), drawn in the held style.
+    /// Set by whitespace in text nodes and by soft breaks, so that spacing
+    /// between adjacent inline nodes is preserved. The style is the one
+    /// active where the whitespace occurs: a space in front of `**bold**`
+    /// stays plain, a space between two struck words stays struck.
     pending_space: Option<TextStyle>,
 
     /// Stack of active inline styles. Styles are pushed when entering a
@@ -137,6 +146,7 @@ impl Renderer {
             column: 0,
             consecutive_newlines: 0,
             at_start: true,
+            word: StyledLine::default(),
             pending_space: None,
             style_stack: Vec::new(),
             extra_indent: 0,
@@ -476,9 +486,15 @@ impl Renderer {
     /// Render the inline children of a paragraph or heading. Paragraphs
     /// and headings never nest inside inline content, so the flag is
     /// simply off again afterwards.
+    ///
+    /// Inline content is the only place words are written, so its end
+    /// places the last buffered word. Everything after it (closing the
+    /// line, block spacing, the next list bullet) reads `column` and the
+    /// newline count, which are only right once that word is on the line.
     fn render_inline_content(&mut self, children: &[Node]) {
         self.in_inline_content = true;
         self.render_children(children);
+        self.flush_word();
         self.in_inline_content = false;
     }
 
@@ -537,7 +553,11 @@ impl Renderer {
     /// Ask for a space before the next word, styled like the text here.
     /// When whitespace on both sides of an element boundary collapses into
     /// one space, the earlier side wins.
+    ///
+    /// Whitespace ends the word under construction, so it is placed first;
+    /// the space then belongs to the word that follows.
     fn request_space(&mut self) {
+        self.flush_word();
         let style = self.current_style();
         self.pending_space.get_or_insert(style);
     }
@@ -584,39 +604,24 @@ impl Renderer {
     }
 
     /// Write a URL in dimmed parentheses as a suffix to the previous inline
-    /// content (link text or image marker). The `(url)` block is treated as
-    /// one atomic unit for wrapping purposes: if it doesn't fit on the
-    /// current line alongside the preceding content, it moves to a fresh
-    /// line. The URL itself is never broken mid-string — on a narrow
-    /// terminal it may overflow its own line, which is preferable to
-    /// rendering it uncopyable.
+    /// content (link text or image marker), separated from it by a dimmed
+    /// space.
+    ///
+    /// That space is the renderer's, not the source's, so the line may
+    /// break there: if the suffix doesn't fit on the current line alongside
+    /// the preceding content, it moves to a fresh line. The suffix starts a
+    /// word of its own, so text glued to the end of a link (`[link](u)s`)
+    /// stays with it. The URL itself is never broken mid-string — on a
+    /// narrow terminal it may overflow its own line, which is preferable
+    /// to rendering it uncopyable.
     fn write_dimmed_url_suffix(&mut self, url: &str) {
-        let url_width = UnicodeWidthStr::width(url);
-        let suffix_width = url_width + 2; // "(" + url + ")"
+        self.flush_word();
 
-        // If we are mid-line and the suffix (including a leading space)
-        // would push past the available width, wrap before writing so the
-        // suffix starts on a fresh line.
-        let mut need_space = self.column > 0;
-        if need_space && self.column + 1 + suffix_width > self.effective_width() {
-            self.wrap_line();
-            // After wrap_line we are at the start of the content area for
-            // the new line (column may still be > 0 due to continuation
-            // indent, but conceptually we're "at the start" and should not
-            // prefix another space).
-            need_space = false;
-        }
-        self.pending_space = None;
-
+        // The dim separating space replaces whatever whitespace the link
+        // text ended with.
         self.push_style(Style::Dim);
-        if need_space {
-            self.emit(" ");
-            self.column += 1;
-        }
-        self.emit(&format!("({url})"));
-        self.column += suffix_width;
-        self.consecutive_newlines = 0;
-        self.at_start = false;
+        self.pending_space = Some(self.current_style());
+        self.write_word(&format!("({url})"));
         self.pop_style();
     }
 
@@ -624,11 +629,24 @@ impl Renderer {
     // Word output with wrapping
     // =========================================================
 
-    /// Write a single word, preceded by a space if `pending_space` is set.
-    /// Wraps to a new line when the word would exceed the available content
-    /// width.
-    fn write_word(&mut self, word: &str) {
-        let width = UnicodeWidthStr::width(word);
+    /// Add a piece of text without whitespace to the word under
+    /// construction, in the style of the style stack.
+    fn write_word(&mut self, piece: &str) {
+        let style = self.current_style();
+        self.word.push_str(piece, style);
+    }
+
+    /// Place the word under construction on the line, preceded by a space
+    /// if `pending_space` is set. Wraps to a new line first when the whole
+    /// word would exceed the available content width. A word wider than
+    /// the line still moves off a line that has content and then overflows
+    /// its own line; it is never broken inside.
+    fn flush_word(&mut self) {
+        if self.word.spans.is_empty() {
+            return;
+        }
+        let word = std::mem::take(&mut self.word);
+        let width = word.width();
 
         if let Some(space_style) = self.pending_space
             && self.column > 0
@@ -645,7 +663,9 @@ impl Renderer {
         }
 
         self.pending_space = None;
-        self.emit(word);
+        for piece in word {
+            self.line.push_str(&piece.text, piece.style);
+        }
         self.column += width;
         self.consecutive_newlines = 0;
         self.at_start = false;
@@ -667,9 +687,10 @@ impl Renderer {
     /// line starts where a wrapped line would: under the text of a list
     /// item, not under its bullet.
     fn write_hard_break(&mut self) {
+        self.flush_word();
         self.wrap_line();
         // Whitespace before the break separates nothing on the new line.
-        // Past a continuation indent the column is not 0, so `write_word`
+        // Past a continuation indent the column is not 0, so `flush_word`
         // would draw it.
         self.pending_space = None;
     }

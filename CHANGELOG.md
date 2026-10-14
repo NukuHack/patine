@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Inline elements written without whitespace between them wrap as one
+  word, each in its own style. A line used to break between `foo` and
+  `**bar**` in `foo**bar**`, before the comma in `**bold**,`, after the
+  `(url)` of `[link](url)s`, and with `Html::Literal` between `Vec` and
+  `<String>`. A line now breaks only where the source has whitespace or
+  a line break, and in front of a link's or image's `(url)`.
+
 ## [1.6.0] - 2026-10-14
 
 ### Added
