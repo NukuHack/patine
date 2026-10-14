@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- A link whose text is its URL gets no dimmed `(url)` after it, since
+  the URL is already there: `<https://example.com>`, bare URLs and email
+  addresses, `<someone@example.com>` (whose URL has `mailto:` in front)
+  and `[https://example.com](https://example.com)`, which showed the URL
+  three times. A link with other text keeps the `(url)`, as does a bare
+  `www.example.com`, whose URL is `http://www.example.com`.
+
 ### Fixed
 
 - List items wrap at the full width. The bullet or number was counted

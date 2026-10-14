@@ -93,8 +93,16 @@ See the documentation (https://example.com/docs) for details.
                        dimmed
 ```
 
-For autolinks and bare URLs, the entire URL is rendered underlined with the
-URL in dimmed parentheses.
+A link whose text is its URL gets no dimmed URL: autolinks and bare URLs
+render as the underlined URL alone. An email autolink counts as such a
+link, since its URL is its text behind `mailto:`. A bare `www.` address
+keeps the dimmed URL, which has `http://` in front of it.
+
+```
+See https://example.com for details.
+    ^^^^^^^^^^^^^^^^^^^
+    underlined
+```
 
 The dimmed `(url)` block is treated as one atomic unit when wrapping. If
 it doesn't fit alongside the link text on the current line, the whole

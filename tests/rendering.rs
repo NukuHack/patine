@@ -326,6 +326,72 @@ fn link_with_bold_text() {
     assert_snapshot!(render("[**bold link**](https://example.com)"));
 }
 
+// A link whose text is its URL already shows the URL, so it gets no
+// `(url)` suffix. An email autolink's URL is its text behind `mailto:`.
+
+#[test]
+fn autolinks_show_their_url_once() {
+    assert_eq!(
+        render("See <https://example.com> now."),
+        "See [underline]https://example.com[] now.\n"
+    );
+    assert_eq!(
+        render("Mail <someone@example.com>."),
+        "Mail [underline]someone@example.com[].\n"
+    );
+    assert_eq!(
+        render("Mail <mailto:someone@example.com>."),
+        "Mail [underline]mailto:someone@example.com[].\n"
+    );
+}
+
+#[test]
+fn literal_autolinks_show_their_url_once() {
+    assert_eq!(
+        render("See https://example.com or someone@example.com"),
+        "See [underline]https://example.com[] or [underline]someone@example.com[]\n"
+    );
+}
+
+#[test]
+fn link_named_after_its_url_shows_it_once() {
+    assert_eq!(
+        render("[https://example.com](https://example.com)"),
+        "[underline]https://example.com[]\n"
+    );
+    assert_eq!(
+        render("[**https://example.com**](https://example.com)"),
+        "[bold,underline]https://example.com[]\n"
+    );
+}
+
+#[test]
+fn link_whose_text_differs_from_its_url_keeps_the_suffix() {
+    assert_eq!(
+        render("[docs](https://example.com)"),
+        "[underline]docs[][dim] (https://example.com)[]\n"
+    );
+    assert_eq!(
+        render("[https://example.com](https://example.org)"),
+        "[underline]https://example.com[][dim] (https://example.org)[]\n"
+    );
+    // A `www.` literal autolink gets `http://` in front of its URL.
+    assert_eq!(
+        render("See www.example.com"),
+        "See [underline]www.example.com[][dim] (http://www.example.com)[]\n"
+    );
+    // Only `mailto:` is left out of the comparison.
+    assert_eq!(
+        render("[example.com](https://example.com)"),
+        "[underline]example.com[][dim] (https://example.com)[]\n"
+    );
+    // Raw HTML counts as text, also where it is dropped.
+    assert_eq!(
+        render("[<b>https://x.org</b>](https://x.org)"),
+        "[underline]https://x.org[][dim] (https://x.org)[]\n"
+    );
+}
+
 // =========================================================
 // Regression: link underline must not bleed into surrounding space
 // =========================================================
@@ -2156,7 +2222,7 @@ fn autolinks_stay_links_with_literal_html() {
         render_with_options(markdown, 80, LITERAL),
         render_with_options(markdown, 80, RenderOptions::default())
     );
-    assert_snapshot!(render_with_options(markdown, 80, LITERAL), @"See [underline]https://example.com[][dim] (https://example.com)[] now.");
+    assert_snapshot!(render_with_options(markdown, 80, LITERAL), @"See [underline]https://example.com[] now.");
 }
 
 #[test]

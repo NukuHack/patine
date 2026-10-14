@@ -2,4 +2,4 @@
 source: tests/rendering.rs
 expression: "render(\"<https://example.com>\")"
 ---
-[underline]https://example.com[][dim] (https://example.com)[]
+[underline]https://example.com[]

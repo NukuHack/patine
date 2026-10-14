@@ -610,11 +610,26 @@ impl Renderer {
         self.pop_style();
     }
 
+    /// Render a link as its underlined text followed by its URL suffix.
+    ///
+    /// A link whose text is its URL shows the URL already and gets no
+    /// suffix. Autolinks are such links: `<https://example.com>` and a GFM
+    /// literal `https://example.com` have the URL as their text, and an
+    /// email autolink `<someone@example.com>` has it behind `mailto:`. A
+    /// `www.example.com` literal gets `http://` in front of its URL, so its
+    /// text differs and it keeps the suffix. The text compared is the
+    /// source text of the link's children, raw HTML included.
     fn render_link(&mut self, link: &markdown::mdast::Link) {
         self.push_style(Style::Underline);
         self.render_children(&link.children);
         self.pop_style();
-        self.write_dimmed_url_suffix(&link.url);
+
+        let text: String = link.children.iter().map(ToString::to_string).collect();
+        let shows_its_url =
+            text == link.url || link.url.strip_prefix("mailto:") == Some(text.as_str());
+        if !shows_its_url {
+            self.write_dimmed_url_suffix(&link.url);
+        }
     }
 
     /// Write a URL in dimmed parentheses as a suffix to the previous inline
