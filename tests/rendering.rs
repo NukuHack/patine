@@ -385,10 +385,24 @@ fn link_whose_text_differs_from_its_url_keeps_the_suffix() {
         render("[example.com](https://example.com)"),
         "[underline]example.com[][dim] (https://example.com)[]\n"
     );
-    // Raw HTML counts as text, also where it is dropped.
+    // Raw HTML counts as text where it is drawn.
+    assert_eq!(
+        render_with_options("[<b>https://x.org</b>](https://x.org)", 80, LITERAL),
+        "[underline]<b>https://x.org</b>[][dim] (https://x.org)[]\n"
+    );
+}
+
+#[test]
+fn link_named_after_its_url_around_dropped_html_shows_it_once() {
+    // With `Html::Drop` the tags are not drawn, so the link text that
+    // shows is its URL.
     assert_eq!(
         render("[<b>https://x.org</b>](https://x.org)"),
-        "[underline]https://x.org[][dim] (https://x.org)[]\n"
+        "[underline]https://x.org[]\n"
+    );
+    assert_eq!(
+        render("[**<i>https://x.org</i>**](https://x.org)"),
+        "[bold,underline]https://x.org[]\n"
     );
 }
 

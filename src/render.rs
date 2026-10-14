@@ -636,18 +636,35 @@ impl Renderer {
     /// literal `https://example.com` have the URL as their text, and an
     /// email autolink `<someone@example.com>` has it behind `mailto:`. A
     /// `www.example.com` literal gets `http://` in front of its URL, so its
-    /// text differs and it keeps the suffix. The text compared is the
-    /// source text of the link's children, raw HTML included.
+    /// text differs and it keeps the suffix. The text compared is the text
+    /// the link draws, without its styling: raw HTML counts with
+    /// [`Html::Literal`] and not with [`Html::Drop`].
     fn render_link(&mut self, link: &markdown::mdast::Link) {
         self.push_style(Style::Underline);
         self.render_children(&link.children);
         self.pop_style();
 
-        let text: String = link.children.iter().map(ToString::to_string).collect();
+        let mut text = String::new();
+        self.push_drawn_text(&link.children, &mut text);
         let shows_its_url =
             text == link.url || link.url.strip_prefix("mailto:") == Some(text.as_str());
         if !shows_its_url {
             self.write_dimmed_url_suffix(&link.url);
+        }
+    }
+
+    /// Append the source text of `nodes` that rendering draws to `text`:
+    /// the value of every text, inline code and raw HTML node, except raw
+    /// HTML that [`Html::Drop`] leaves out.
+    fn push_drawn_text(&self, nodes: &[Node], text: &mut String) {
+        for node in nodes {
+            match node {
+                Node::Html(_) if self.options.html == Html::Drop => {}
+                _ => match node.children() {
+                    Some(children) => self.push_drawn_text(children, text),
+                    None => text.push_str(&node.to_string()),
+                },
+            }
         }
     }
 

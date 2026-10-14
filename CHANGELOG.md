@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shows the block on the line under the bullet or number. A blank line
   used to separate them, as if the bullet stood alone. A nested list
   starting an item already rendered this way.
+- With `Html::Drop` (the default), a link whose text is its URL wrapped
+  in raw HTML gets no dimmed `(url)` after it, since the HTML is not
+  drawn: `[<b>https://x.org</b>](https://x.org)` rendered as
+  `https://x.org (https://x.org)`. With `Html::Literal` the HTML is
+  drawn, so the link text differs from its URL and keeps the `(url)`.
 
 ## [1.6.2] - 2026-10-14
 
