@@ -2,8 +2,8 @@
 source: tests/rendering.rs
 expression: "render(\"> > | a | b |\\n> > |--|--|\\n> > | 1 | 2 |\")"
 ---
-[dim]│ │ [/intensity][dim][italic]┌───┬───┐[/italic][/intensity]
-[dim]│ │ [/intensity][dim][italic]│ [/italic][/intensity][bold][dim][italic]a[/italic][/intensity][dim][italic] │ [/italic][/intensity][bold][dim][italic]b[/italic][/intensity][dim][italic] │[/italic][/intensity]
-[dim]│ │ [/intensity][dim][italic]├───┼───┤[/italic][/intensity]
-[dim]│ │ [/intensity][dim][italic]│ 1 │ 2 │[/italic][/intensity]
-[dim]│ │ [/intensity][dim][italic]└───┴───┘[/italic][/intensity]
+[dim]│ │ [][dim,italic]┌───┬───┐[]
+[dim]│ │ [][dim,italic]│ [][bold,dim,italic]a[][dim,italic] │ [][bold,dim,italic]b[][dim,italic] │[]
+[dim]│ │ [][dim,italic]├───┼───┤[]
+[dim]│ │ [][dim,italic]│ 1 │ 2 │[]
+[dim]│ │ [][dim,italic]└───┴───┘[]

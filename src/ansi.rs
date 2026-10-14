@@ -213,6 +213,40 @@ mod tests {
     }
 
     #[test]
+    fn each_span_closes_its_style_before_the_next_opens() {
+        // Two spans sharing an attribute still switch it off and on
+        // again: every span starts from the default style.
+        let bold = TextStyle {
+            bold: true,
+            ..TextStyle::default()
+        };
+        let bold_italic = TextStyle {
+            italic: true,
+            ..bold
+        };
+        assert_eq!(
+            written(&[line(&[
+                ("a", bold),
+                ("b", bold_italic),
+                ("c", TextStyle::default())
+            ])]),
+            "\x1b[1ma\x1b[22m\x1b[1m\x1b[3mb\x1b[23m\x1b[22mc\n"
+        );
+    }
+
+    #[test]
+    fn styles_are_reset_before_every_newline() {
+        let underline = TextStyle {
+            underline: Underline::Single,
+            ..TextStyle::default()
+        };
+        assert_eq!(
+            written(&[line(&[("a", underline)]), line(&[("b", underline)])]),
+            "\x1b[4ma\x1b[24m\n\x1b[4mb\x1b[24m\n"
+        );
+    }
+
+    #[test]
     fn bold_and_dim_never_use_sgr_21() {
         // SGR 21 reads as double underline on many terminals.
         let style = TextStyle {

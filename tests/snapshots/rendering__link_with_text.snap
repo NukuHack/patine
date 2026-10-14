@@ -2,4 +2,4 @@
 source: tests/rendering.rs
 expression: "render(\"[click here](https://example.com)\")"
 ---
-[underline]click here[/underline][dim] (https://example.com)[/intensity]
+[underline]click here[][dim] (https://example.com)[]

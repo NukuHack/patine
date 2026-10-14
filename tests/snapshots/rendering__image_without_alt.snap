@@ -2,4 +2,4 @@
 source: tests/rendering.rs
 expression: "render(\"![](./screenshot.png)\")"
 ---
-[image][dim] (./screenshot.png)[/intensity]
+[image][dim] (./screenshot.png)[]

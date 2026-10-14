@@ -2,92 +2,99 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use insta::assert_snapshot;
+//! Renderer tests on the line model: what `render_lines` lays out and how
+//! each span is styled. The ANSI encoding of those lines is tested in
+//! `ansi.rs`.
 
-/// Render markdown to a string, replacing ANSI escape sequences with
-/// human-readable tags so that snapshots are easy to review and diff.
-///
-/// Mapping (patine SGR codes):
-///   \x1b[1m      → [bold]         \x1b[22m     → [/intensity]  (NormalIntensity, clears Bold+Dim)
-///   \x1b[2m      → [dim]
-///   \x1b[3m      → [italic]       \x1b[23m     → [/italic]
-///   \x1b[4m      → [underline]    \x1b[24m     → [/underline]
-///   \x1b[38;5;<n>m → [fg<n>]      \x1b[39m     → [/color]
-///     Exception: index 3 keeps the semantic tag [code] because it
-///     doubles as the inline-code color used everywhere outside of
-///     highlighted blocks. Inside a highlighted block, a yellow
-///     token will also appear as [code] — that is the literal
-///     byte truth and acceptable for snapshot readability.
+use insta::assert_snapshot;
+use patine::{AnsiColor, StyledLine, TextStyle, Underline, render_lines};
+
+/// Render markdown at 80 columns into the canonical text form used by the
+/// snapshots (see [`serialize`]).
 fn render(markdown: &str) -> String {
     render_with_width(markdown, 80)
 }
 
-/// Like [`render`], but with a custom terminal width.
+/// Like [`render`], but with a custom width.
 fn render_with_width(markdown: &str, width: usize) -> String {
-    let mut buf: Vec<u8> = Vec::new();
-    patine::render(markdown, &mut buf, width).expect("render should not fail");
-
-    String::from_utf8(buf)
-        .expect("output should be valid utf-8")
-        // Order matters: longer sequences must be replaced before shorter
-        // ones that share a prefix (e.g., \x1b[22m before \x1b[2m).
-        .replace("\x1b[38;5;0m", "[fg0]")
-        .replace("\x1b[38;5;1m", "[fg1]")
-        .replace("\x1b[38;5;2m", "[fg2]")
-        .replace("\x1b[38;5;3m", "[code]")
-        .replace("\x1b[38;5;4m", "[fg4]")
-        .replace("\x1b[38;5;5m", "[fg5]")
-        .replace("\x1b[38;5;6m", "[fg6]")
-        .replace("\x1b[38;5;7m", "[fg7]")
-        .replace("\x1b[39m", "[/color]")
-        // NormalIntensity (SGR 22) is used to disable both Bold and Dim.
-        // In the tag output it appears as [/intensity]. The context
-        // determines whether it was closing bold or dim.
-        .replace("\x1b[22m", "[/intensity]")
-        .replace("\x1b[23m", "[/italic]")
-        .replace("\x1b[24m", "[/underline]")
-        .replace("\x1b[1m", "[bold]")
-        .replace("\x1b[2m", "[dim]")
-        .replace("\x1b[3m", "[italic]")
-        // Order matters: `\x1b[4:2m` (double underline) must be replaced
-        // before `\x1b[4m` (single underline) so the longer prefix wins.
-        .replace("\x1b[4:2m", "[double-underline]")
-        .replace("\x1b[4m", "[underline]")
-        .replace("\x1b[9m", "[strike]")
-        .replace("\x1b[29m", "[/strike]")
+    serialize(&render_lines(markdown, width))
 }
 
-/// Strip the `[tag]` markers (e.g. `[bold]`, `[/underline]`) that `render`
-/// substitutes for ANSI escapes. Used to measure visible display width
-/// or to assert on the plain-text shape of a line. Only the exact set of
-/// style tags emitted by `render` is removed — this preserves literal
-/// brackets in rendered text such as `[image]` markers.
-fn strip_tags(s: &str) -> String {
-    let mut out = s.to_string();
-    for tag in [
-        "[bold]",
-        "[/intensity]",
-        "[dim]",
-        "[italic]",
-        "[/italic]",
-        "[underline]",
-        "[/underline]",
-        "[double-underline]",
-        "[code]",
-        "[fg0]",
-        "[fg1]",
-        "[fg2]",
-        "[fg4]",
-        "[fg5]",
-        "[fg6]",
-        "[fg7]",
-        "[/color]",
-        "[strike]",
-        "[/strike]",
-    ] {
-        out = out.replace(tag, "");
+/// Write lines in a canonical text form: plain spans as their bare text,
+/// styled spans as `[attributes]text[]` with the span's complete style.
+/// Attributes appear in a fixed order (bold, dim, italic, underline or
+/// double-underline, strike, color name), so every visual state has
+/// exactly one spelling, and each line ends with a newline.
+fn serialize(lines: &[StyledLine]) -> String {
+    let mut out = String::new();
+    for line in lines {
+        for span in line {
+            let attributes = attribute_names(span.style);
+            if attributes.is_empty() {
+                out.push_str(&span.text);
+            } else {
+                out.push_str(&format!("[{}]{}[]", attributes.join(","), span.text));
+            }
+        }
+        out.push('\n');
     }
     out
+}
+
+fn attribute_names(style: TextStyle) -> Vec<&'static str> {
+    let mut names = Vec::new();
+    if style.bold {
+        names.push("bold");
+    }
+    if style.dim {
+        names.push("dim");
+    }
+    if style.italic {
+        names.push("italic");
+    }
+    match style.underline {
+        Underline::None => {}
+        Underline::Single => names.push("underline"),
+        Underline::Double => names.push("double-underline"),
+    }
+    if style.strikethrough {
+        names.push("strike");
+    }
+    if let Some(color) = style.foreground {
+        names.push(match color {
+            AnsiColor::Black => "black",
+            AnsiColor::Red => "red",
+            AnsiColor::Green => "green",
+            AnsiColor::Yellow => "yellow",
+            AnsiColor::Blue => "blue",
+            AnsiColor::Magenta => "magenta",
+            AnsiColor::Cyan => "cyan",
+            AnsiColor::White => "white",
+        });
+    }
+    names
+}
+
+/// The plain text of every rendered line, without styling.
+fn plain_lines(markdown: &str, width: usize) -> Vec<String> {
+    render_lines(markdown, width)
+        .iter()
+        .map(ToString::to_string)
+        .collect()
+}
+
+/// Every character of `line` paired with the style it is drawn in.
+fn styled_chars(line: &StyledLine) -> Vec<(char, TextStyle)> {
+    line.spans
+        .iter()
+        .flat_map(|span| span.text.chars().map(move |c| (c, span.style)))
+        .collect()
+}
+
+fn dim() -> TextStyle {
+    let mut style = TextStyle::default();
+    style.dim = true;
+    style
 }
 
 // =========================================================
@@ -323,21 +330,21 @@ fn link_with_bold_text() {
 #[test]
 fn link_space_before_not_underlined() {
     // The space between preceding text and the link must not be underlined.
-    let output = render("word [link](https://x.com) word");
+    let lines = render_lines("word [link](https://x.com) word", 80);
+    let spans = &lines[0].spans;
     // The underline must start at "link", not at the space before it.
-    assert!(
-        output.contains("word [underline]link[/underline]"),
-        "space before link text must not be underlined.\nOutput: {output}"
-    );
+    assert_eq!(spans[0].text, "word ", "{spans:?}");
+    assert_eq!(spans[0].style, TextStyle::default());
+    assert_eq!(spans[1].text, "link", "{spans:?}");
+    assert_eq!(spans[1].style.underline, Underline::Single);
 }
 
 #[test]
 fn link_text_is_underlined() {
-    let output = render("[click here](https://example.com)");
-    assert!(
-        output.contains("[underline]click here[/underline]"),
-        "link text must be underlined.\nOutput: {output}"
-    );
+    let lines = render_lines("[click here](https://example.com)", 80);
+    let link = &lines[0].spans[0];
+    assert_eq!(link.text, "click here");
+    assert_eq!(link.style.underline, Underline::Single);
 }
 
 #[test]
@@ -347,11 +354,12 @@ fn long_link_url_wraps_onto_new_line() {
     // mid-string (it may overflow on its own line — overflow is preferable
     // to making a URL uncopyable).
     let url = "https://example.com/some/very/long/path/that/exceeds";
-    let output = render_with_width(&format!("[link]({url})"), 40);
+    let lines = plain_lines(&format!("[link]({url})"), 40);
+    let output = lines.join("\n");
     // The link text "link" should be on one line; the URL suffix "(url)"
     // should begin a different line because it did not fit next to "link".
-    let link_line = output
-        .lines()
+    let link_line = lines
+        .iter()
         .find(|l| l.contains("link"))
         .expect("must contain link text");
     assert!(
@@ -368,9 +376,10 @@ fn long_link_url_wraps_onto_new_line() {
 #[test]
 fn long_image_url_wraps_onto_new_line() {
     let url = "https://example.com/some/very/long/path/that/exceeds.png";
-    let output = render_with_width(&format!("![alt]({url})"), 40);
-    let alt_line = output
-        .lines()
+    let lines = plain_lines(&format!("![alt]({url})"), 40);
+    let output = lines.join("\n");
+    let alt_line = lines
+        .iter()
         .find(|l| l.contains("[image: alt]"))
         .expect("must contain image alt marker");
     assert!(
@@ -390,15 +399,8 @@ fn long_image_url_wraps_onto_new_line() {
 #[test]
 fn code_block_extra_indent() {
     // Code blocks should be indented 2 spaces (one nesting level).
-    // The color tag precedes the indent in our tagged output, so strip tags
-    // before checking indentation.
-    let output = render("```\ncode\n```");
-    let content_line = output.lines().find(|l| l.contains("code")).unwrap();
-    let stripped = content_line.replace("[code]", "").replace("[/color]", "");
-    assert!(
-        stripped.starts_with("  ") && !stripped.starts_with("    "),
-        "code block should have 2-space nesting indent.\nStripped line: '{stripped}'"
-    );
+    let lines = plain_lines("```\ncode\n```", 80);
+    assert_eq!(lines, ["  code"]);
 }
 
 // =========================================================
@@ -407,8 +409,8 @@ fn code_block_extra_indent() {
 
 #[test]
 fn list_has_blank_line_after_heading() {
-    let output = render("## Features\n\n- Item one\n- Item two");
-    let lines: Vec<&str> = output.lines().collect();
+    let lines = plain_lines("## Features\n\n- Item one\n- Item two", 80);
+    let output = lines.join("\n");
     // Line 0: heading, Line 1: blank, Line 2: first list item.
     assert!(
         lines.len() >= 3,
@@ -423,8 +425,8 @@ fn list_has_blank_line_after_heading() {
 
 #[test]
 fn list_has_blank_line_after_paragraph() {
-    let output = render("Some text.\n\n- Item one\n- Item two");
-    let lines: Vec<&str> = output.lines().collect();
+    let lines = plain_lines("Some text.\n\n- Item one\n- Item two", 80);
+    let output = lines.join("\n");
     assert!(
         lines.len() >= 3,
         "expected at least 3 lines (paragraph, blank, list item)"
@@ -541,14 +543,17 @@ fn table_after_heading() {
 fn table_in_blockquote_has_bars() {
     // Every line of a table rendered inside a blockquote must start
     // with the blockquote `│ ` bar. The table itself uses `│` for cell
-    // borders, so we must strip ANSI tags *and* check the line prefix
-    // — not just whether `│` appears anywhere.
-    let output = render("> | col1 | col2 |\n> |------|------|\n> | a    | b    |");
+    // borders, so we must check the line prefix — not just whether `│`
+    // appears anywhere.
+    let lines = plain_lines(
+        "> | col1 | col2 |\n> |------|------|\n> | a    | b    |",
+        80,
+    );
+    let output = lines.join("\n");
     let table_line_markers = ["┌", "│ col1", "├", "│ a ", "└"];
     for marker in table_line_markers {
-        let line = output
-            .lines()
-            .map(strip_tags)
+        let line = lines
+            .iter()
             .find(|l| l.contains(marker))
             .unwrap_or_else(|| panic!("missing table line with {marker:?}\nfull:\n{output}"));
         assert!(
@@ -562,12 +567,12 @@ fn table_in_blockquote_has_bars() {
 fn table_in_nested_blockquote_has_double_bars() {
     // Two levels of blockquote nesting should produce two bar prefixes
     // on every table line.
-    let output = render("> > | a | b |\n> > |--|--|\n> > | 1 | 2 |");
+    let lines = plain_lines("> > | a | b |\n> > |--|--|\n> > | 1 | 2 |", 80);
+    let output = lines.join("\n");
     let table_line_markers = ["┌", "│ a", "├", "│ 1", "└"];
     for marker in table_line_markers {
-        let line = output
-            .lines()
-            .map(strip_tags)
+        let line = lines
+            .iter()
             .find(|l| l.contains(marker))
             .unwrap_or_else(|| panic!("missing table line with {marker:?}\nfull:\n{output}"));
         assert!(
@@ -616,12 +621,12 @@ fn table_wraps_long_cell_text() {
 | Topic | Notes |
 |---|---|
 | cats | The quick brown fox jumps over the lazy dog repeatedly |";
-    let output = render_with_width(md, 30);
-    for line in output.lines() {
-        let visible = strip_tags(line);
+    let lines = render_lines(md, 30);
+    let output = serialize(&lines);
+    for line in &lines {
         assert!(
-            unicode_width::UnicodeWidthStr::width(visible.as_str()) <= 30,
-            "line exceeds width 30: {visible:?}\nfull:\n{output}"
+            line.width() <= 30,
+            "line exceeds width 30: {line}\nfull:\n{output}"
         );
     }
     for word in [
@@ -654,20 +659,20 @@ fn table_preserves_column_proportions() {
 | A | Middle column | Much longer final column content |
 |---|---|---|
 | x | medium text | a lot more text here to pad it out |";
-    let output = render_with_width(md, 40);
+    let lines = render_lines(md, 40);
+    let output = serialize(&lines);
     // Every line must fit in 40 columns — this is the primary "shrank"
     // assertion that fails without width-aware layout.
-    for line in output.lines() {
-        let visible = strip_tags(line);
+    for line in &lines {
         assert!(
-            unicode_width::UnicodeWidthStr::width(visible.as_str()) <= 40,
-            "line exceeds width 40: {visible:?}\nfull:\n{output}"
+            line.width() <= 40,
+            "line exceeds width 40: {line}\nfull:\n{output}"
         );
     }
     // Find the top border line (deterministic shape): `┌─...┬─...┬─...┐`.
-    let border = output
-        .lines()
-        .map(strip_tags)
+    let border = lines
+        .iter()
+        .map(ToString::to_string)
         .find(|l| l.starts_with('┌'))
         .expect("expected top border");
     // Segment widths are the number of `─` runs between the corners/T
@@ -721,20 +726,20 @@ fn table_overflows_when_minimum_widths_exceed_budget() {
 fn table_header_centered_with_wrapping() {
     // A long header name forced to wrap to a narrow column. The header
     // cell must span more than one visual line (= wrapping happened),
-    // and every line that contains one of the header words must also
-    // carry the `[bold]` styling tag.
+    // and every header word must be bold, on every wrapped line.
     let md = "\
 | Very Long Header Name | x |
 |---|---|
 | a | b |";
-    let output = render_with_width(md, 24);
+    let lines = render_lines(md, 24);
+    let output = serialize(&lines);
 
     // Count distinct header-content lines: lines that start with the
     // table's left border `│` and contain any of the header words.
-    let lines: Vec<String> = output.lines().map(strip_tags).collect();
     let header_words = ["Very", "Long", "Header", "Name"];
     let header_line_count = lines
         .iter()
+        .map(ToString::to_string)
         .filter(|l| l.starts_with('│') && header_words.iter().any(|w| l.contains(w)))
         .count();
     assert!(
@@ -742,12 +747,12 @@ fn table_header_centered_with_wrapping() {
         "header should wrap to ≥2 lines, saw {header_line_count}:\n{output}"
     );
 
-    // Every header word must appear on a line that also contains the
-    // bold styling tag (i.e. the wrapped header lines all stay bold).
+    // Every header word must sit inside a bold span.
     for word in header_words {
-        let found = output
-            .lines()
-            .any(|line| line.contains("[bold]") && line.contains(word));
+        let found = lines
+            .iter()
+            .flatten()
+            .any(|span| span.style.bold && span.text.contains(word));
         assert!(found, "header word {word:?} must appear bold:\n{output}");
     }
 }
@@ -762,11 +767,12 @@ fn table_in_blockquote_with_wrapping() {
 > | Topic | Notes |
 > |---|---|
 > | cats | The quick brown fox jumps over the lazy dog |";
-    let output = render_with_width(md, 36);
+    let lines = render_lines(md, 36);
+    let output = serialize(&lines);
     // Every non-border table line and every border line must begin
-    // with the blockquote bar after tag stripping.
-    for line in output.lines() {
-        let visible = strip_tags(line);
+    // with the blockquote bar.
+    for line in &lines {
+        let visible = line.to_string();
         if visible.is_empty() {
             continue;
         }
@@ -780,12 +786,11 @@ fn table_in_blockquote_with_wrapping() {
             );
         }
     }
-    // The table must fit within 36 columns (content stripped of tags).
-    for line in output.lines() {
-        let visible = strip_tags(line);
+    // The table must fit within 36 columns.
+    for line in &lines {
         assert!(
-            unicode_width::UnicodeWidthStr::width(visible.as_str()) <= 36,
-            "line exceeds width 36: {visible:?}\nfull:\n{output}"
+            line.width() <= 36,
+            "line exceeds width 36: {line}\nfull:\n{output}"
         );
     }
 }
@@ -799,12 +804,12 @@ fn table_variable_row_heights() {
 | Tall | Short |
 |---|---|
 | one two three four five six | x |";
-    let output = render_with_width(md, 22);
     // Count the number of content lines between the header separator
     // and the bottom border by looking for lines that begin with the
     // table's left border `│` and contain the short "x" cell or any
     // wrapped word of the tall cell.
-    let lines: Vec<String> = output.lines().map(strip_tags).collect();
+    let lines = plain_lines(md, 22);
+    let output = lines.join("\n");
     // Indices of separator and bottom border anchor the data region.
     let sep_idx = lines
         .iter()
@@ -848,14 +853,8 @@ fn code_block_no_wrap() {
     // A very long line in a code block must not be wrapped.
     let long_line = "x".repeat(120);
     let md = format!("```\n{long_line}\n```");
-    let mut buf: Vec<u8> = Vec::new();
-    patine::render(&md, &mut buf, 80).expect("render should not fail");
-    let output = String::from_utf8(buf).expect("valid utf-8");
     // The long line should appear intact (not broken into multiple lines).
-    assert!(
-        output.contains(&long_line),
-        "code block lines must not be wrapped"
-    );
+    assert_eq!(plain_lines(&md, 80), [format!("  {long_line}")]);
 }
 
 #[test]
@@ -991,41 +990,17 @@ fn highlighted_code_block_never_wraps() {
     // may soft-wrap it.
     let long = format!("let x = {};", "1 + ".repeat(40));
     let src = format!("```rust\n{long}\n```");
-    let mut buf: Vec<u8> = Vec::new();
-    patine::render(&src, &mut buf, 40).expect("render should not fail");
-    let output = String::from_utf8(buf).expect("valid utf-8");
-    // Strip all our tag-forms first so we can check the plain text
-    // shape. We do that by running the replacement helper then
-    // strip_tags.
-    let tagged = output
-        .replace("\x1b[38;5;0m", "[fg0]")
-        .replace("\x1b[38;5;1m", "[fg1]")
-        .replace("\x1b[38;5;2m", "[fg2]")
-        .replace("\x1b[38;5;3m", "[code]")
-        .replace("\x1b[38;5;4m", "[fg4]")
-        .replace("\x1b[38;5;5m", "[fg5]")
-        .replace("\x1b[38;5;6m", "[fg6]")
-        .replace("\x1b[38;5;7m", "[fg7]")
-        .replace("\x1b[39m", "[/color]")
-        .replace("\x1b[22m", "[/intensity]")
-        .replace("\x1b[23m", "[/italic]")
-        .replace("\x1b[24m", "[/underline]")
-        .replace("\x1b[1m", "[bold]")
-        .replace("\x1b[2m", "[dim]")
-        .replace("\x1b[3m", "[italic]");
-    let plain = strip_tags(&tagged);
-    assert!(
-        plain.lines().any(|l| l.contains(&long)),
-        "long highlighted line must appear intact on a single output line:\n{plain}"
-    );
+    assert_eq!(plain_lines(&src, 40), [format!("  {long}")]);
 }
 
 #[test]
 fn highlighted_narrow_width_does_not_panic() {
     // Width smaller than the rendered content must not panic,
     // same guarantee as for the fallback path.
-    let mut buf: Vec<u8> = Vec::new();
-    patine::render("```rust\nlet x = 42;\n```", &mut buf, 6).expect("render should not fail");
+    assert_eq!(
+        plain_lines("```rust\nlet x = 42;\n```", 6),
+        ["  let x = 42;"]
+    );
 }
 
 #[test]
@@ -1038,8 +1013,7 @@ fn highlighted_code_block_preserves_unicode() {
 
 #[test]
 fn highlighted_empty_code_block_does_not_panic() {
-    let mut buf: Vec<u8> = Vec::new();
-    patine::render("```rust\n```", &mut buf, 80).expect("render should not fail");
+    assert!(render_lines("```rust\n```", 80).is_empty());
 }
 
 // =========================================================
@@ -1095,38 +1069,10 @@ fn blockquote_with_emphasis() {
 fn blockquote_blank_separator_has_bar() {
     // The blank line between two paragraphs inside a blockquote must render
     // with the │ bar prefix, so the visual bar column is unbroken.
-    let output = render("> First\n>\n> Second");
-    let lines: Vec<&str> = output.lines().collect();
-    // Find lines that are purely whitespace or style tags (no visible text
-    // and no bar). Every line between content lines must have the bar.
-    for (i, line) in lines.iter().enumerate() {
-        if line.is_empty() {
-            continue;
-        }
-        let stripped = line
-            .replace("[dim]", "")
-            .replace("[/dim]", "")
-            .replace("[italic]", "")
-            .replace("[/italic]", "")
-            .replace("[bold]", "")
-            .replace("[/bold]", "");
-        let stripped = stripped.trim();
-        // Lines that are purely closing style tags (no visible content) at the
-        // end of the blockquote are expected — they close the outer dim/italic.
-        if stripped.is_empty() && !line.contains('│') {
-            // This is only acceptable as the very last non-empty line.
-            let remaining_has_content = lines[i + 1..]
-                .iter()
-                .any(|l| !l.is_empty() && l.contains('│'));
-            if remaining_has_content {
-                panic!(
-                    "line {i} inside blockquote has no │ bar prefix.\n\
-                     Line content: '{line}'\n\
-                     Full output:\n{output}"
-                );
-            }
-        }
-    }
+    assert_eq!(
+        plain_lines("> First\n>\n> Second", 80),
+        ["│ First", "│ ", "│ Second"]
+    );
 }
 
 // =========================================================
@@ -1138,15 +1084,14 @@ fn list_item_wrap_indentation() {
     // When a list item's text is long enough to wrap, the continuation line
     // must be indented past the bullet/number, not back at the left margin.
     let long_item = format!("- {}", "word ".repeat(30).trim());
-    let output = render(&long_item);
-    let lines: Vec<&str> = output.lines().collect();
+    let lines = plain_lines(&long_item, 80);
     assert!(
         lines.len() >= 2,
         "expected wrapping to produce multiple lines"
     );
     // The second line should have more indentation than just the 2-space
     // global indent — it should align with the text after "• ".
-    let second_line = lines[1];
+    let second_line = &lines[1];
     // "• " is 2 columns, so continuation should start with 2 spaces.
     assert!(
         second_line.starts_with("  "),
@@ -1157,13 +1102,12 @@ fn list_item_wrap_indentation() {
 #[test]
 fn ordered_list_item_wrap_indentation() {
     let long_item = format!("1. {}", "word ".repeat(30).trim());
-    let output = render(&long_item);
-    let lines: Vec<&str> = output.lines().collect();
+    let lines = plain_lines(&long_item, 80);
     assert!(
         lines.len() >= 2,
         "expected wrapping to produce multiple lines"
     );
-    let second_line = lines[1];
+    let second_line = &lines[1];
     // "1. " is 3 chars, so continuation should start with 3 spaces.
     assert!(
         second_line.starts_with("   "),
@@ -1180,8 +1124,8 @@ fn blockquote_no_bare_style_lines() {
     // The blockquote must not emit lines that are purely style escape codes
     // without the bar prefix. Every line with content or style tags should
     // also include the │ bar (except the final style-closing line).
-    let output = render("> Hello");
-    let lines: Vec<&str> = output.lines().collect();
+    let lines = plain_lines("> Hello", 80);
+    let output = lines.join("\n");
     // The first line must contain the bar.
     assert!(
         lines[0].contains('│'),
@@ -1199,8 +1143,8 @@ fn blockquote_no_leading_empty_bar_line() {
     // When a blockquote follows another block (e.g., a heading), the blank
     // line separator must NOT contain a │ bar. The bar should only appear
     // on lines that are part of the blockquote content.
-    let output = render("# Title\n\n> Quote");
-    let lines: Vec<&str> = output.lines().collect();
+    let lines = plain_lines("# Title\n\n> Quote", 80);
+    let output = lines.join("\n");
     // Find the first line that contains │. It must also contain the word "Quote".
     let first_bar_line = lines.iter().find(|l| l.contains('│'));
     assert!(
@@ -1212,8 +1156,8 @@ fn blockquote_no_leading_empty_bar_line() {
 #[test]
 fn heading_then_blockquote_has_blank_line() {
     // A blank line must separate the heading from the blockquote content.
-    let output = render("# Title\n\n> Quote");
-    let lines: Vec<&str> = output.lines().collect();
+    let lines = plain_lines("# Title\n\n> Quote", 80);
+    let output = lines.join("\n");
     // There must be an empty line between the heading line and the blockquote.
     assert!(
         lines.len() >= 3,
@@ -1224,39 +1168,6 @@ fn heading_then_blockquote_has_blank_line() {
         lines[1].trim().is_empty() || !lines[1].contains('│'),
         "blank line between heading and blockquote must not have a bar.\nLine: '{}'\nFull output:\n{output}",
         lines[1]
-    );
-}
-
-// =========================================================
-// Regression: NoBold must not produce double underlines
-// =========================================================
-
-#[test]
-fn bold_disable_uses_normal_intensity() {
-    // crossterm's Attribute::NoBold emits SGR 21, which some terminals
-    // interpret as "doubly underlined" rather than "not bold". We must use
-    // NormalIntensity (SGR 22) instead. Verify that the rendered output
-    // does NOT contain \x1b[21m.
-    let mut buf: Vec<u8> = Vec::new();
-    patine::render("**bold**", &mut buf, 80).expect("render should not fail");
-    let raw = String::from_utf8(buf).expect("valid utf-8");
-    assert!(
-        !raw.contains("\x1b[21m"),
-        "output must not contain SGR 21 (NoBold). Use SGR 22 (NormalIntensity) instead.\nRaw output: {raw:?}"
-    );
-}
-
-#[test]
-fn bold_then_dim_no_double_underline() {
-    // After bold text followed by a dim section (e.g., link URL), there
-    // must be no SGR 21 in the output.
-    let mut buf: Vec<u8> = Vec::new();
-    patine::render("**bold** then [link](https://x.com)", &mut buf, 80)
-        .expect("render should not fail");
-    let raw = String::from_utf8(buf).expect("valid utf-8");
-    assert!(
-        !raw.contains("\x1b[21m"),
-        "output must not contain SGR 21.\nRaw output: {raw:?}"
     );
 }
 
@@ -1272,11 +1183,7 @@ fn horizontal_rule() {
 #[test]
 fn horizontal_rule_width() {
     // At 40-column terminal width, the rule should span all 40 columns.
-    let mut buf: Vec<u8> = Vec::new();
-    patine::render("---", &mut buf, 40).expect("render should not fail");
-    let output = String::from_utf8(buf).expect("valid utf-8");
-    let dash_count = output.matches('─').count();
-    assert_eq!(dash_count, 40, "rule should span full terminal width");
+    assert_eq!(plain_lines("---", 40), ["─".repeat(40)]);
 }
 
 // =========================================================
@@ -1328,13 +1235,12 @@ fn frontmatter_whitespace_only_renders_nothing() {
 
 #[test]
 fn frontmatter_only_document() {
-    // A document that is nothing but frontmatter renders the block with
-    // exactly one trailing newline (the `finish` contract).
-    let output = render("---\ntitle: x\n---");
-    assert_snapshot!(&output);
-    assert!(output.ends_with('\n'), "output must end with a newline");
+    // A document that is nothing but frontmatter renders the block and
+    // nothing after it: no trailing blank line.
+    let lines = render_lines("---\ntitle: x\n---", 80);
+    assert_snapshot!(serialize(&lines));
     assert!(
-        !output.ends_with("\n\n"),
+        lines.last().is_some_and(|line| !line.spans.is_empty()),
         "output must not end with a blank line"
     );
 }
@@ -1352,11 +1258,10 @@ fn frontmatter_long_lines_never_wrap() {
     // word-wrapped, even past the terminal width.
     let md =
         "---\ndescription: this value is far too long to fit into forty columns of output\n---";
-    let output = render_with_width(md, 40);
-    let stripped = strip_tags(&output);
+    let lines = plain_lines(md, 40);
     assert!(
-        stripped.lines().any(|l| l.contains("forty columns")),
-        "long value must stay on one verbatim line.\nOutput: {stripped}"
+        lines.iter().any(|l| l.contains("forty columns")),
+        "long value must stay on one verbatim line.\nOutput: {lines:#?}"
     );
 }
 
@@ -1372,21 +1277,13 @@ fn frontmatter_unicode_content() {
 
 #[test]
 fn no_leading_blank_line() {
-    let output = render("# Hello");
-    assert!(
-        !output.starts_with('\n'),
-        "output must not start with a blank line"
-    );
+    let lines = plain_lines("# Hello", 80);
+    assert_eq!(lines[0], "Hello", "output must not start with a blank line");
 }
 
 #[test]
-fn trailing_newline() {
-    let output = render("Hello");
-    assert!(output.ends_with('\n'), "output must end with a newline");
-    assert!(
-        !output.ends_with("\n\n"),
-        "output must not end with a double newline"
-    );
+fn no_trailing_blank_line() {
+    assert_eq!(plain_lines("Hello\n\n\n", 80), ["Hello"]);
 }
 
 #[test]
@@ -1448,9 +1345,8 @@ fn narrow_width_five_wraps_every_word() {
         assert!(output.contains(word), "missing {word:?} in:\n{output}");
     }
     // Every word should be on its own line (because 5+1+5 > 5).
-    let visible_lines: Vec<String> = output
-        .lines()
-        .map(strip_tags)
+    let visible_lines: Vec<String> = plain_lines("hello world foo bar", 5)
+        .into_iter()
         .filter(|l| !l.trim().is_empty())
         .collect();
     assert!(
@@ -1486,9 +1382,9 @@ fn hard_break_trailing_backslash() {
     // A `\` at the end of a line is a Markdown hard break. The two
     // parts must appear on separate visual lines (not joined by a
     // space).
-    let output = render("first line\\\nsecond line");
+    let lines = plain_lines("first line\\\nsecond line", 80);
+    let output = lines.join("\n");
     // Check: "first line" and "second line" are on different lines.
-    let lines: Vec<String> = output.lines().map(strip_tags).collect();
     let first_idx = lines
         .iter()
         .position(|l| l.contains("first line"))
@@ -1508,8 +1404,8 @@ fn hard_break_two_trailing_spaces() {
     // Two trailing spaces before a newline is the classic Markdown
     // hard-break spelling. Same expected behavior as the backslash
     // form.
-    let output = render("first line  \nsecond line");
-    let lines: Vec<String> = output.lines().map(strip_tags).collect();
+    let lines = plain_lines("first line  \nsecond line", 80);
+    let output = lines.join("\n");
     let first_idx = lines
         .iter()
         .position(|l| l.contains("first line"))
@@ -1571,26 +1467,13 @@ fn list_item_with_multiple_paragraphs() {
 #[test]
 fn empty_code_block_does_not_panic() {
     // A fenced code block with no body must render without panicking
-    // and must produce no visible text (empty → empty). ANSI style
-    // escapes may still be emitted around the absent body; they're
-    // ignored here by stripping tags before inspecting visible
-    // content.
-    let output = render("```\n```");
-    let visible = strip_tags(&output);
-    assert!(
-        visible.trim().is_empty(),
-        "empty code block should produce no visible content, got {visible:?}"
-    );
+    // and must produce no lines at all (empty → empty).
+    assert_eq!(render_lines("```\n```", 80), []);
 }
 
 #[test]
 fn empty_code_block_with_language_does_not_panic() {
-    let output = render("```rust\n```");
-    let visible = strip_tags(&output);
-    assert!(
-        visible.trim().is_empty(),
-        "empty code block should produce no visible content, got {visible:?}"
-    );
+    assert_eq!(render_lines("```rust\n```", 80), []);
 }
 
 #[test]
@@ -1627,121 +1510,8 @@ fn showcase_document_renders() {
 }
 
 // =========================================================
-// Per-character styling
+// Line prefixes are unstyled layout
 // =========================================================
-//
-// The tag snapshots show which escape sequences were written, but not
-// which style a character ends up with: a terminal keeps an attribute
-// active across newlines until something switches it off. The helpers
-// below replay the escape sequences the way a terminal does and report
-// the effective style of every visible character, so tests can assert
-// on what the reader sees.
-
-/// The SGR attributes patine emits, as a terminal tracks them.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct Sgr {
-    bold: bool,
-    dim: bool,
-    italic: bool,
-    /// 0 = none, 1 = single, 2 = double.
-    underline: u8,
-    strike: bool,
-    fg: Option<u8>,
-}
-
-impl Sgr {
-    fn dim() -> Self {
-        Sgr {
-            dim: true,
-            ..Sgr::default()
-        }
-    }
-}
-
-fn render_raw(markdown: &str, width: usize) -> String {
-    let mut buf: Vec<u8> = Vec::new();
-    patine::render(markdown, &mut buf, width).expect("render should not fail");
-    String::from_utf8(buf).expect("output should be valid utf-8")
-}
-
-/// One output line as a terminal shows it: every character with its
-/// effective style, and the style still active when the line ends.
-#[derive(Debug)]
-struct ScreenLine {
-    chars: Vec<(char, Sgr)>,
-    end: Sgr,
-}
-
-impl ScreenLine {
-    fn text(&self) -> String {
-        self.chars.iter().map(|&(c, _)| c).collect()
-    }
-}
-
-/// Replay `raw` like a terminal and return its lines. The style state
-/// carries over from one line to the next, as it does on screen.
-fn screen_lines(raw: &str) -> Vec<ScreenLine> {
-    let mut state = Sgr::default();
-    let mut lines = Vec::new();
-    let mut current = Vec::new();
-    let mut chars = raw.chars();
-    while let Some(c) = chars.next() {
-        match c {
-            '\x1b' => {
-                assert_eq!(chars.next(), Some('['), "only CSI sequences expected");
-                let params: String = chars.by_ref().take_while(|&c| c != 'm').collect();
-                match params.as_str() {
-                    "1" => state.bold = true,
-                    "2" => state.dim = true,
-                    "3" => state.italic = true,
-                    "4" => state.underline = 1,
-                    "4:2" => state.underline = 2,
-                    "9" => state.strike = true,
-                    "22" => (state.bold, state.dim) = (false, false),
-                    "23" => state.italic = false,
-                    "24" => state.underline = 0,
-                    "29" => state.strike = false,
-                    "39" => state.fg = None,
-                    other => {
-                        let index = other
-                            .strip_prefix("38;5;")
-                            .unwrap_or_else(|| panic!("unexpected SGR {other:?}"));
-                        state.fg = Some(index.parse().expect("palette index"));
-                    }
-                }
-            }
-            '\n' => lines.push(ScreenLine {
-                chars: std::mem::take(&mut current),
-                end: state,
-            }),
-            c => current.push((c, state)),
-        }
-    }
-    lines
-}
-
-#[test]
-fn every_line_ends_in_the_default_style() {
-    // Each line closes the styles it opens, so nothing leaks into the
-    // indent of the next line or into whatever the terminal prints after
-    // patine exits.
-    let inputs = [
-        SHOWCASE_MD,
-        "> quote with **bold** and a [link](https://example.com)",
-        "- item with ~~a struck phrase that wraps over several lines~~ end",
-    ];
-    for input in inputs {
-        let raw = render_raw(input, 30);
-        for line in screen_lines(&raw) {
-            assert_eq!(
-                line.end,
-                Sgr::default(),
-                "line {:?} leaves a style active\nfull:\n{raw:?}",
-                line.text()
-            );
-        }
-    }
-}
 
 #[test]
 fn wrapped_continuation_indent_is_unstyled() {
@@ -1754,14 +1524,17 @@ fn wrapped_continuation_indent_is_unstyled() {
         "- outer\n  - inner ~~struck words that wrap around~~",
     ];
     for input in inputs {
-        let raw = render_raw(input, 16);
-        for line in screen_lines(&raw).iter().skip(1) {
-            for &(c, style) in line.chars.iter().take_while(|&&(c, _)| c == ' ') {
+        let lines = render_lines(input, 16);
+        for line in lines.iter().skip(1) {
+            for (c, style) in styled_chars(line)
+                .into_iter()
+                .take_while(|&(c, _)| c == ' ')
+            {
                 assert_eq!(
                     style,
-                    Sgr::default(),
-                    "indent {c:?} of {:?} is styled\nfull:\n{raw:?}",
-                    line.text()
+                    TextStyle::default(),
+                    "indent {c:?} of {line:?} is styled\nfull:\n{}",
+                    serialize(&lines)
                 );
             }
         }
@@ -1772,23 +1545,22 @@ fn wrapped_continuation_indent_is_unstyled() {
 fn blockquote_bars_are_dim_only() {
     // The `│` bars are dim whatever the quoted content looks like,
     // including on the wrapped lines of a heading inside the quote.
-    let raw = render_raw(
+    let lines = render_lines(
         "> quoted *text*\n>\n> ## A heading that wraps\n>\n> > nested",
         16,
     );
-    for line in screen_lines(&raw) {
-        let bars: Vec<&(char, Sgr)> = line
-            .chars
-            .iter()
-            .take_while(|&&(c, _)| c == '│' || c == ' ')
+    for line in &lines {
+        let bars: Vec<(char, TextStyle)> = styled_chars(line)
+            .into_iter()
+            .take_while(|&(c, _)| c == '│' || c == ' ')
             .collect();
-        assert!(!bars.is_empty(), "line {:?} lacks a bar", line.text());
-        for &&(c, style) in &bars {
+        assert!(!bars.is_empty(), "line {line} lacks a bar");
+        for (c, style) in bars {
             assert_eq!(
                 style,
-                Sgr::dim(),
-                "bar prefix character {c:?} of {:?}\nfull:\n{raw:?}",
-                line.text()
+                dim(),
+                "bar prefix character {c:?} of {line}\nfull:\n{}",
+                serialize(&lines)
             );
         }
     }
@@ -1798,23 +1570,27 @@ fn blockquote_bars_are_dim_only() {
 fn table_in_blockquote_is_dim_and_italic_throughout() {
     // A table inside a quote takes on the quote's dim italic text, on
     // every row and on both sides of a bold header cell.
-    let raw = render_raw(
+    let lines = render_lines(
         "> | col1 | col2 |\n> |------|------|\n> | a    | b    |",
         80,
     );
-    let lines = screen_lines(&raw);
-    assert_eq!(lines.len(), 5, "full:\n{raw:?}");
+    assert_eq!(lines.len(), 5, "full:\n{}", serialize(&lines));
     for line in &lines {
-        let (bar, table) = line.chars.split_at(2);
-        assert!(bar.iter().all(|&(_, style)| style == Sgr::dim()));
+        let chars = styled_chars(line);
+        let (bar, table) = chars.split_at(2);
+        assert!(bar.iter().all(|&(_, style)| style == dim()));
+        let in_header_row = line.to_string().contains("col");
         for &(c, style) in table {
             assert!(
                 style.dim && style.italic,
-                "{c:?} in {:?} is not dim italic\nfull:\n{raw:?}",
-                line.text()
+                "{c:?} in {line} is not dim italic\nfull:\n{}",
+                serialize(&lines)
             );
-            let in_header_cell = line.text().contains("col") && c.is_alphanumeric();
-            assert_eq!(style.bold, in_header_cell, "{c:?} in {:?}", line.text());
+            assert_eq!(
+                style.bold,
+                in_header_row && c.is_alphanumeric(),
+                "{c:?} in {line}"
+            );
         }
     }
 }

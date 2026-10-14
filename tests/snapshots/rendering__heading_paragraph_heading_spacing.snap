@@ -2,8 +2,8 @@
 source: tests/rendering.rs
 expression: "render(\"## First\\n\\nA paragraph.\\n\\n## Second\")"
 ---
-[bold][underline]First[/underline][/intensity]
+[bold,underline]First[]
 
 A paragraph.
 
-[bold][underline]Second[/underline][/intensity]
+[bold,underline]Second[]

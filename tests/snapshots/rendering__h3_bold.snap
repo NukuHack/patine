@@ -2,4 +2,4 @@
 source: tests/rendering.rs
 expression: "render(\"### Sub Section\")"
 ---
-[bold]Sub Section[/intensity]
+[bold]Sub Section[]

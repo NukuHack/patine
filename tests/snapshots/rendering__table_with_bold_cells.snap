@@ -3,7 +3,7 @@ source: tests/rendering.rs
 expression: "render(\"| Level | Items |\\n|---|---|\\n| **Blocker** | Auth system |\")"
 ---
 ┌─────────┬─────────────┐
-│ [bold] Level [/intensity] │ [bold]   Items   [/intensity] │
+│ [bold] Level [] │ [bold]   Items   [] │
 ├─────────┼─────────────┤
 │ Blocker │ Auth system │
 └─────────┴─────────────┘

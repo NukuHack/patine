@@ -2,6 +2,6 @@
 source: tests/rendering.rs
 expression: "render(\"```\\nfn main() {\\n    println!(\\\"hello\\\");\\n}\\n```\")"
 ---
-  [code]fn main() {[/color]
-  [code]    println!("hello");[/color]
-  [code]}[/color]
+  [yellow]fn main() {[]
+  [yellow]    println!("hello");[]
+  [yellow]}[]

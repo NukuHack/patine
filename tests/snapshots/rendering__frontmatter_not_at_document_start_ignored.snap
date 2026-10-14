@@ -4,6 +4,6 @@ expression: "render(\"\\n---\\ntitle: x\\n---\\n\\nBody\")"
 ---
 ────────────────────────────────────────────────────────────────────────────────
 
-[bold][underline]title: x[/underline][/intensity]
+[bold,underline]title: x[]
 
 Body

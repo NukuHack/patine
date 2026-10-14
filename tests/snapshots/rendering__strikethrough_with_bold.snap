@@ -2,4 +2,4 @@
 source: tests/rendering.rs
 expression: "render(\"~~**bold and struck**~~\")"
 ---
-[bold][strike]bold and struck[/strike][/intensity]
+[bold,strike]bold and struck[]

@@ -2,4 +2,4 @@
 source: tests/rendering.rs
 expression: "render(\"See the diagram: ![overview](./overview.png) for context.\")"
 ---
-See the diagram: [image: overview][dim] (./overview.png)[/intensity] for context.
+See the diagram: [image: overview][dim] (./overview.png)[] for context.

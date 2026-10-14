@@ -2,4 +2,4 @@
 source: tests/rendering.rs
 expression: "render(\"```foobar\\nsome text\\n```\")"
 ---
-  [code]some text[/color]
+  [yellow]some text[]

@@ -2,6 +2,6 @@
 source: tests/rendering.rs
 expression: "render(\"> Some intro text.\\n>\\n> ```rust\\n> let x = 1;\\n> ```\")"
 ---
-[dim]│ [/intensity][dim][italic]Some intro text.[/italic][/intensity]
-[dim]│ [/intensity]
-  [dim]│ [/intensity][dim][italic][fg5]let[/color][/italic][/intensity][dim][italic] x [/italic][/intensity][dim][italic][fg5]=[/color][/italic][/intensity][dim][italic] [/italic][/intensity][dim][italic][code]1[/color][/italic][/intensity][dim][italic];[/italic][/intensity]
+[dim]│ [][dim,italic]Some intro text.[]
+[dim]│ []
+  [dim]│ [][dim,italic,magenta]let[][dim,italic] x [][dim,italic,magenta]=[][dim,italic] [][dim,italic,yellow]1[][dim,italic];[]

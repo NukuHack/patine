@@ -2,6 +2,6 @@
 source: tests/rendering.rs
 expression: "render(\"```toml\\n[package]\\nname = \\\"patine\\\"\\nversion = \\\"1.0.0\\\"\\n```\")"
 ---
-  [[code]package[/color]]
-  [fg1]name[/color] = [fg2]"patine"[/color]
-  [fg1]version[/color] = [fg2]"1.0.0"[/color]
+  [[yellow]package[]]
+  [red]name[] = [green]"patine"[]
+  [red]version[] = [green]"1.0.0"[]

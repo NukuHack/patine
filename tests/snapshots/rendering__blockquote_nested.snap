@@ -2,6 +2,6 @@
 source: tests/rendering.rs
 expression: "render(\"> Outer\\n>\\n>> Inner\")"
 ---
-[dim]│ [/intensity][dim][italic]Outer[/italic][/intensity]
-[dim]│ [/intensity]
-[dim]│ │ [/intensity][dim][italic]Inner[/italic][/intensity]
+[dim]│ [][dim,italic]Outer[]
+[dim]│ []
+[dim]│ │ [][dim,italic]Inner[]

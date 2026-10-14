@@ -2,4 +2,4 @@
 source: tests/rendering.rs
 expression: "render(\"> This is a quote.\")"
 ---
-[dim]│ [/intensity][dim][italic]This is a quote.[/italic][/intensity]
+[dim]│ [][dim,italic]This is a quote.[]

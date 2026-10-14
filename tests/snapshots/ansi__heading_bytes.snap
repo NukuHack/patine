@@ -1,0 +1,5 @@
+---
+source: tests/ansi.rs
+expression: "tagged(&render_raw(\"# H1 with a [link](https://example.com) and **bold**\",\n80))"
+---
+[bold][italic][double-underline]H1 with a [/underline][/italic][/intensity][bold][italic][underline]link[/underline][/italic][/intensity][bold][dim][italic][double-underline] (https://example.com)[/underline][/italic][/intensity][bold][italic][double-underline] and bold[/underline][/italic][/intensity]

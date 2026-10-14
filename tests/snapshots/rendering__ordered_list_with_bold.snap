@@ -2,5 +2,5 @@
 source: tests/rendering.rs
 expression: "render(\"1. **Item one** — description\\n2. **Item two** — description\")"
 ---
-1. [bold]Item one[/intensity] — description
-2. [bold]Item two[/intensity] — description
+1. [bold]Item one[] — description
+2. [bold]Item two[] — description

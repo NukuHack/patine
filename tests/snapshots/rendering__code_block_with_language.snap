@@ -2,4 +2,4 @@
 source: tests/rendering.rs
 expression: "render(\"```rust\\nlet x = 42;\\n```\")"
 ---
-  [fg5]let[/color] x [fg5]=[/color] [code]42[/color];
+  [magenta]let[] x [magenta]=[] [yellow]42[];

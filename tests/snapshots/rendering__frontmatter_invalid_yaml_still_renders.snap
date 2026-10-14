@@ -3,8 +3,8 @@ source: tests/rendering.rs
 expression: "render(\"---\\ntitle: [unclosed\\n  ::: not yaml\\n---\\n\\nBody\")"
 ---
   ---
-  [fg1]title[/color]: [[fg2]unclosed[/color]
-    [fg1]::[/color]: [fg2]not yaml[/color]
-  [fg2]---[/color]
+  [red]title[]: [[green]unclosed[]
+    [red]::[]: [green]not yaml[]
+  [green]---[]
 
 Body

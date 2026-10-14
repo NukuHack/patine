@@ -2,4 +2,4 @@
 source: tests/rendering.rs
 expression: "render(\"#### Deep Heading\")"
 ---
-[bold]Deep Heading[/intensity]
+[bold]Deep Heading[]

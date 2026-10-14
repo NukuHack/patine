@@ -1,7 +1,7 @@
 ---
 source: tests/rendering.rs
-expression: "&output"
+expression: serialize(&lines)
 ---
   ---
-  [fg1]title[/color]: [fg2]x[/color]
+  [red]title[]: [green]x[]
   ---

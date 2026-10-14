@@ -2,4 +2,4 @@
 source: tests/rendering.rs
 expression: "render(\"This is **bold** text.\")"
 ---
-This is[bold] bold[/intensity] text.
+This is[bold] bold[] text.

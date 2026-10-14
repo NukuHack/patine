@@ -2,4 +2,4 @@
 source: tests/rendering.rs
 expression: "render(\"```json\\n{\\\"id\\\": 42, \\\"name\\\": \\\"alice\\\"}\\n```\")"
 ---
-  {[fg4]"id"[/color]: [code]42[/color], [fg4]"name"[/color]: [fg2]"alice"[/color]}
+  {[blue]"id"[]: [yellow]42[], [blue]"name"[]: [green]"alice"[]}
