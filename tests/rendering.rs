@@ -340,6 +340,37 @@ fn link_space_before_not_underlined() {
 }
 
 #[test]
+fn space_before_an_inline_element_is_unstyled() {
+    // The space that separates a word from the inline element after it
+    // belongs to the surrounding text, so it is not struck through,
+    // colored or bold along with the element.
+    let lines = render_lines("Run `cargo` or ~~not~~ **this** *now*", 80);
+    let chars = styled_chars(&lines[0]);
+    for (i, &(c, style)) in chars.iter().enumerate() {
+        if c == ' ' {
+            assert_eq!(
+                style,
+                TextStyle::default(),
+                "space at column {i} is styled\n{}",
+                serialize(&lines)
+            );
+        }
+    }
+}
+
+#[test]
+fn spaces_inside_an_inline_element_keep_its_style() {
+    let lines = render_lines("a ~~two words~~ b", 80);
+    let struck: Vec<&str> = lines[0]
+        .spans
+        .iter()
+        .filter(|span| span.style.strikethrough)
+        .map(|span| span.text.as_str())
+        .collect();
+    assert_eq!(struck, ["two words"]);
+}
+
+#[test]
 fn link_text_is_underlined() {
     let lines = render_lines("[click here](https://example.com)", 80);
     let link = &lines[0].spans[0];

@@ -2,4 +2,4 @@
 source: tests/rendering.rs
 expression: "render(\"This is *italic* text.\")"
 ---
-This is[italic] italic[] text.
+This is [italic]italic[] text.

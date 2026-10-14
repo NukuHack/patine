@@ -26,7 +26,7 @@
 //! let lines = render_lines("Run `cargo test` **now**.", 80);
 //! for span in &lines[0] {
 //!     if span.style.foreground == Some(AnsiColor::Yellow) {
-//!         assert_eq!(span.text, " cargo test");
+//!         assert_eq!(span.text, "cargo test");
 //!     }
 //! }
 //! assert_eq!(lines[0].to_string(), "Run cargo test now.");

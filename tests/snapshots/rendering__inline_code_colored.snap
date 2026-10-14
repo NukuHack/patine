@@ -2,4 +2,4 @@
 source: tests/rendering.rs
 expression: "render(\"Use `println!` to print.\")"
 ---
-Use[yellow] println![] to print.
+Use [yellow]println![] to print.

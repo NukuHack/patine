@@ -64,12 +64,12 @@ fn inline_styles_become_separate_spans() {
     assert_eq!(
         lines[0],
         StyledLine::new(vec![
-            // The space before an inline element takes that element's
-            // style; only links keep it plain.
-            StyledSpan::new("Run", plain),
-            StyledSpan::new(" cargo", code),
-            StyledSpan::new(" or", plain),
-            StyledSpan::new(" not", struck),
+            // The space before an inline element belongs to the text
+            // around it, so it stays plain.
+            StyledSpan::new("Run ", plain),
+            StyledSpan::new("cargo", code),
+            StyledSpan::new(" or ", plain),
+            StyledSpan::new("not", struck),
             StyledSpan::new(" ", plain),
             StyledSpan::new("this", link),
             StyledSpan::new(" (https://x.io)", url),

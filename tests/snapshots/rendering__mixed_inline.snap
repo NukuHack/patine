@@ -2,4 +2,4 @@
 source: tests/rendering.rs
 expression: "render(\"Start **bold** middle *italic* end.\")"
 ---
-Start[bold] bold[] middle[italic] italic[] end.
+Start [bold]bold[] middle [italic]italic[] end.

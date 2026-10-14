@@ -2,4 +2,4 @@
 source: tests/rendering.rs
 expression: "render(\"Use `foo` and `bar` together.\")"
 ---
-Use[yellow] foo[] and[yellow] bar[] together.
+Use [yellow]foo[] and [yellow]bar[] together.

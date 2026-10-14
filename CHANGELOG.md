@@ -43,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bold and underline.
 - A table inside a blockquote is dim and italic throughout. Before, the
   rest of the header row after the first header cell lost the dim.
+- The space in front of inline code, bold, italic or struck-through text
+  is styled like the text around it. It used to take on the style of the
+  element after it, which showed as a struck-through space before
+  `~~deleted~~` text. Links already kept that space plain.
 
 ## [1.4.0] - 2026-07-12
 

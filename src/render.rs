@@ -92,11 +92,13 @@ pub struct Renderer {
     /// blank line at the top of the output.
     at_start: bool,
 
-    /// When true, the next word written will be preceded by a space (unless
-    /// it falls at the start of a line). Set by trailing whitespace in text
-    /// nodes and by soft breaks, so that spacing between adjacent inline
-    /// nodes is preserved.
-    pending_space: bool,
+    /// When set, the next word written will be preceded by a space (unless
+    /// it falls at the start of a line), drawn in the held style. Set by
+    /// whitespace in text nodes and by soft breaks, so that spacing between
+    /// adjacent inline nodes is preserved. The style is the one active
+    /// where the whitespace occurs: a space in front of `**bold**` stays
+    /// plain, a space between two struck words stays struck.
+    pending_space: Option<TextStyle>,
 
     /// Stack of active inline styles. Styles are pushed when entering a
     /// styled node and popped when leaving. Content written in between is
@@ -126,7 +128,7 @@ impl Renderer {
             column: 0,
             consecutive_newlines: 0,
             at_start: true,
-            pending_space: false,
+            pending_space: None,
             style_stack: Vec::new(),
             extra_indent: 0,
             continuation_indent: 0,
@@ -458,7 +460,7 @@ impl Renderer {
         }
 
         if text.starts_with(char::is_whitespace) {
-            self.pending_space = true;
+            self.request_space();
         }
 
         let mut first = true;
@@ -466,14 +468,22 @@ impl Renderer {
             if first {
                 first = false;
             } else {
-                self.pending_space = true;
+                self.request_space();
             }
             self.write_word(word);
         }
 
         if text.ends_with(char::is_whitespace) {
-            self.pending_space = true;
+            self.request_space();
         }
+    }
+
+    /// Ask for a space before the next word, styled like the text here.
+    /// When whitespace on both sides of an element boundary collapses into
+    /// one space, the earlier side wins.
+    fn request_space(&mut self) {
+        let style = self.current_style();
+        self.pending_space.get_or_insert(style);
     }
 
     fn render_strong(&mut self, children: &[Node]) {
@@ -511,13 +521,6 @@ impl Renderer {
     }
 
     fn render_link(&mut self, link: &markdown::mdast::Link) {
-        // Flush any pending space before enabling underline, so the space
-        // between the preceding word and the link text is not underlined.
-        if self.pending_space && self.column > 0 {
-            self.emit(" ");
-            self.column += 1;
-            self.pending_space = false;
-        }
         self.push_style(Style::Underline);
         self.render_children(&link.children);
         self.pop_style();
@@ -547,7 +550,7 @@ impl Renderer {
             // prefix another space).
             need_space = false;
         }
-        self.pending_space = false;
+        self.pending_space = None;
 
         self.push_style(Style::Dim);
         if need_space {
@@ -571,11 +574,13 @@ impl Renderer {
     fn write_word(&mut self, word: &str) {
         let width = UnicodeWidthStr::width(word);
 
-        if self.pending_space && self.column > 0 {
+        if let Some(space_style) = self.pending_space
+            && self.column > 0
+        {
             if self.column + 1 + width > self.effective_width() {
                 self.wrap_line();
             } else {
-                self.emit(" ");
+                self.line.push_str(" ", space_style);
                 self.column += 1;
             }
         } else if self.column > 0 && self.column + width > self.effective_width() {
@@ -583,7 +588,7 @@ impl Renderer {
             self.wrap_line();
         }
 
-        self.pending_space = false;
+        self.pending_space = None;
         self.emit(word);
         self.column += width;
         self.consecutive_newlines = 0;
@@ -645,7 +650,7 @@ impl Renderer {
         if has_indent {
             self.consecutive_newlines = 0;
             self.at_start = false;
-            self.pending_space = false;
+            self.pending_space = None;
         }
     }
 
