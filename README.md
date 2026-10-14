@@ -75,7 +75,7 @@ The binary and its dependencies (`clap`, `crossterm`) sit behind the default `cl
 
 ```toml
 [dependencies]
-patine = { version = "1.5", default-features = false }
+patine = { version = "1.6", default-features = false }
 ```
 
 ```rust
@@ -85,6 +85,22 @@ for line in &lines {
         // Map span.style onto your own style type and draw span.text.
     }
 }
+```
+
+`patine::render_lines_with` and `patine::render_with` take `RenderOptions` for text that is not a Markdown document, such as a description a program wrote into a JSON string. Two options change what the defaults do:
+
+- `soft_breaks`: with `SoftBreaks::Join` (the default), a single newline inside running text joins the lines into one paragraph, as CommonMark specifies. With `SoftBreaks::Break`, it breaks the line the way a trailing backslash does, as GitHub comments show it. Code blocks, inline code and frontmatter are not affected.
+- `html`: with `Html::Drop` (the default), raw HTML is left out, so `Vec<String>` renders as `Vec`. With `Html::Literal`, it shows as written: inline HTML in the style of the text around it, an HTML block line by line and unwrapped. Autolinks such as `<https://example.com>` are links either way.
+
+```rust
+use patine::{Html, RenderOptions, SoftBreaks};
+
+const DESCRIPTION: RenderOptions = RenderOptions::new()
+    .with_soft_breaks(SoftBreaks::Break)
+    .with_html(Html::Literal);
+
+let lines = patine::render_lines_with("Returns a Vec<String>.\nOne per line.", 80, &DESCRIPTION);
+assert_eq!(lines.len(), 2);
 ```
 
 ## Why "patine"?

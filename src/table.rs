@@ -5,6 +5,7 @@
 use markdown::mdast::Node;
 use unicode_width::UnicodeWidthStr;
 
+use crate::options::Html;
 use crate::styled::{StyledLine, TextStyle};
 use crate::wrap;
 
@@ -47,28 +48,32 @@ const TRAILING_BORDER: usize = 1; // final "│"
 // =========================================================
 
 /// Recursively extract the plain text content of an AST node, stripping
-/// all formatting markers.
-fn extract_text(node: &Node) -> String {
+/// all formatting markers. Inline HTML counts as text when `html` is
+/// [`Html::Literal`].
+fn extract_text(node: &Node, html: Html) -> String {
     match node {
         Node::Text(t) => t.value.clone(),
         Node::InlineCode(c) => c.value.clone(),
+        Node::Html(h) if html == Html::Literal => h.value.clone(),
         other => other
             .children()
-            .map(|children| children.iter().map(extract_text).collect::<String>())
+            .map(|children| {
+                children
+                    .iter()
+                    .map(|child| extract_text(child, html))
+                    .collect::<String>()
+            })
             .unwrap_or_default(),
     }
 }
 
 /// Extract the plain text for each cell in a row.
-fn row_texts(row: &Node) -> Vec<String> {
+fn row_texts(row: &Node, html: Html) -> Vec<String> {
     match row {
         Node::TableRow(r) => r
             .children
             .iter()
-            .map(|cell| match cell {
-                Node::TableCell(c) => c.children.iter().map(extract_text).collect::<String>(),
-                other => extract_text(other),
-            })
+            .map(|cell| extract_text(cell, html))
             .collect(),
         _ => Vec::new(),
     }
@@ -107,8 +112,16 @@ fn row_texts(row: &Node) -> Vec<String> {
 ///
 /// An empty table (no rows) yields an empty `Vec`; the caller is
 /// expected to treat that as "nothing to render".
-pub fn layout_table(table: &markdown::mdast::Table, available_width: usize) -> Vec<StyledLine> {
-    let rows: Vec<Vec<String>> = table.children.iter().map(row_texts).collect();
+pub fn layout_table(
+    table: &markdown::mdast::Table,
+    available_width: usize,
+    html: Html,
+) -> Vec<StyledLine> {
+    let rows: Vec<Vec<String>> = table
+        .children
+        .iter()
+        .map(|row| row_texts(row, html))
+        .collect();
     if rows.is_empty() {
         return Vec::new();
     }

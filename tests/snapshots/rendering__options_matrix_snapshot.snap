@@ -1,0 +1,36 @@
+---
+source: tests/rendering.rs
+expression: out
+---
+== join, drop
+Pick [bold]one of these[]:
+
+• [yellow]Vec<String>[] or Vec for the list
+• none
+== break, drop
+Pick [bold]one[]
+[bold]of these[]:
+
+• [yellow]Vec<String>[] or Vec
+  for the list
+• none
+== join, literal
+Pick [bold]one of these[]:
+
+• [yellow]Vec<String>[] or Vec<String> for the <em>list</em>
+• none
+
+<details>
+  <summary>More</summary>
+</details>
+== break, literal
+Pick [bold]one[]
+[bold]of these[]:
+
+• [yellow]Vec<String>[] or Vec<String>
+  for the <em>list</em>
+• none
+
+<details>
+  <summary>More</summary>
+</details>

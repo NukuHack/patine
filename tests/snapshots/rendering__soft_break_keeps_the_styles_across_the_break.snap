@@ -1,0 +1,8 @@
+---
+source: tests/rendering.rs
+expression: "render_with_options(\"**bold\\nstill bold** plain\\n*italic* ~~struck\\nstruck~~\",\n80, BREAK)"
+---
+[bold]bold[]
+[bold]still bold[] plain
+[italic]italic[] [strike]struck[]
+[strike]struck[]

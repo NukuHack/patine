@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `render_lines_with(input, width, options)` and
+  `render_with(input, writer, terminal_width, options)` render with
+  `RenderOptions`. `render_lines` and `render` use the defaults, which
+  render exactly as before.
+- `RenderOptions::soft_breaks` decides what a single newline inside
+  running text does: `SoftBreaks::Join` (the default) joins the lines as
+  CommonMark specifies, `SoftBreaks::Break` breaks the line like a hard
+  break.
+- `RenderOptions::html` decides what happens to raw HTML: `Html::Drop`
+  (the default) leaves it out, `Html::Literal` shows it as written,
+  inline HTML within its line and an HTML block line by line without
+  wrapping.
+
 ### Fixed
 
 - The line after a hard break (a trailing backslash or two spaces) in a

@@ -20,6 +20,11 @@
 //!   application, maps these onto its own types. [`highlight`] does the
 //!   same for source code outside Markdown.
 //!
+//! [`render_lines_with`] and [`render_with`] take [`RenderOptions`] for
+//! text that is not a Markdown document, where a single newline should
+//! break the line ([`SoftBreaks`]) and raw HTML should show as written
+//! ([`Html`]).
+//!
 //! ```
 //! use patine::{AnsiColor, render_lines};
 //!
@@ -42,6 +47,7 @@
 
 mod ansi;
 mod highlight;
+mod options;
 mod render;
 mod styled;
 mod table;
@@ -51,6 +57,7 @@ use std::io::Write;
 
 use anyhow::Result;
 
+pub use crate::options::{Html, RenderOptions, SoftBreaks};
 pub use crate::styled::{AnsiColor, StyledLine, StyledSpan, TextStyle, Underline};
 
 /// Parse and render a Markdown string as styled terminal output, wrapping
@@ -74,7 +81,36 @@ pub use crate::styled::{AnsiColor, StyledLine, StyledSpan, TextStyle, Underline}
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 pub fn render(input: &str, writer: &mut impl Write, terminal_width: usize) -> Result<()> {
-    ansi::write_lines(&render_lines(input, terminal_width), writer)
+    render_with(input, writer, terminal_width, &RenderOptions::default())
+}
+
+/// Like [`render`], with [`RenderOptions`] that change how soft line
+/// breaks and raw HTML render.
+///
+/// Writes the lines of [`render_lines_with`].
+///
+/// # Errors
+///
+/// Fails only when writing to `writer` fails.
+///
+/// # Examples
+///
+/// ```
+/// use patine::{RenderOptions, SoftBreaks};
+///
+/// let options = RenderOptions::new().with_soft_breaks(SoftBreaks::Break);
+/// let mut output = Vec::new();
+/// patine::render_with("one\ntwo", &mut output, 80, &options)?;
+/// assert_eq!(output, b"one\ntwo\n");
+/// # Ok::<(), anyhow::Error>(())
+/// ```
+pub fn render_with(
+    input: &str,
+    writer: &mut impl Write,
+    terminal_width: usize,
+    options: &RenderOptions,
+) -> Result<()> {
+    ansi::write_lines(&render_lines_with(input, terminal_width, options), writer)
 }
 
 /// Parse a Markdown string (CommonMark with GitHub extensions and YAML or
@@ -102,11 +138,32 @@ pub fn render(input: &str, writer: &mut impl Write, terminal_width: usize) -> Re
 /// assert!(lines[1].spans.is_empty());
 /// ```
 pub fn render_lines(input: &str, width: usize) -> Vec<StyledLine> {
+    render_lines_with(input, width, &RenderOptions::default())
+}
+
+/// Like [`render_lines`], with [`RenderOptions`] that change how soft
+/// line breaks and raw HTML render.
+///
+/// The defaults suit Markdown documents. Short text fields, such as text
+/// a program writes into a JSON string, often mean a newline as a line
+/// break and a `<` as a literal character:
+///
+/// ```
+/// use patine::{Html, RenderOptions, SoftBreaks, render_lines_with};
+///
+/// let options = RenderOptions::new()
+///     .with_soft_breaks(SoftBreaks::Break)
+///     .with_html(Html::Literal);
+/// let lines = render_lines_with("Returns a Vec<String>.\nSee **below**.", 80, &options);
+/// assert_eq!(lines[0].to_string(), "Returns a Vec<String>.");
+/// assert_eq!(lines[1].to_string(), "See below.");
+/// ```
+pub fn render_lines_with(input: &str, width: usize, options: &RenderOptions) -> Vec<StyledLine> {
     // GFM plus frontmatter: `Constructs::gfm()` does not enable the
     // frontmatter construct, so a `---`/`+++` block at the document start
     // would otherwise be parsed as ordinary markdown (setext heading,
     // thematic break) and mangle the metadata.
-    let options = markdown::ParseOptions {
+    let parse_options = markdown::ParseOptions {
         constructs: markdown::Constructs {
             frontmatter: true,
             ..markdown::Constructs::gfm()
@@ -115,10 +172,10 @@ pub fn render_lines(input: &str, width: usize) -> Vec<StyledLine> {
     };
     // markdown-rs reports syntax errors only for MDX constructs, which
     // these options leave disabled.
-    let tree =
-        markdown::to_mdast(input, &options).expect("Markdown without MDX has no syntax errors");
+    let tree = markdown::to_mdast(input, &parse_options)
+        .expect("Markdown without MDX has no syntax errors");
 
-    let mut renderer = render::Renderer::new(width);
+    let mut renderer = render::Renderer::new(width, *options);
     renderer.render_node(&tree);
     renderer.finish()
 }

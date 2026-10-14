@@ -10,7 +10,10 @@
 use std::io::Write;
 
 use insta::assert_snapshot;
-use patine::{AnsiColor, StyledLine, TextStyle, Underline, render_lines};
+use patine::{
+    AnsiColor, Html, RenderOptions, SoftBreaks, StyledLine, TextStyle, Underline, render_lines,
+    render_lines_with,
+};
 
 const SHOWCASE_MD: &str = include_str!("fixtures/showcase.md");
 
@@ -208,6 +211,23 @@ fn render_shows_exactly_the_lines_of_render_lines() {
                 assert_eq!(shown.chars, styled_chars(line), "{markdown:?} at {width}");
             }
         }
+    }
+}
+
+#[test]
+fn render_with_shows_exactly_the_lines_of_render_lines_with() {
+    let options = RenderOptions::new()
+        .with_soft_breaks(SoftBreaks::Break)
+        .with_html(Html::Literal);
+    let markdown = "> **bold\n> line** <b>tag</b>\n\n<div>\n  block\n</div>";
+    let mut buf = Vec::new();
+    patine::render_with(markdown, &mut buf, 80, &options).expect("writing to a Vec cannot fail");
+    let screen = screen_lines(&String::from_utf8(buf).expect("output is UTF-8"));
+    let lines = render_lines_with(markdown, 80, &options);
+    assert_eq!(screen.len(), lines.len());
+    for (shown, line) in screen.iter().zip(&lines) {
+        assert_eq!(shown.chars, styled_chars(line));
+        assert_eq!(shown.end, TextStyle::default());
     }
 }
 

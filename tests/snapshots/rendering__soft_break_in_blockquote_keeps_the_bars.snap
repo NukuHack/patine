@@ -1,0 +1,9 @@
+---
+source: tests/rendering.rs
+expression: "render_with_options(\"> quoted\\n> more\\n>\\n> - item\\n>   line\", 80, BREAK)"
+---
+[dim]│ [][dim,italic]quoted[]
+[dim]│ [][dim,italic]more[]
+[dim]│ []
+[dim]│ [][dim,italic]• item[]
+[dim]│ []  [dim,italic]line[]

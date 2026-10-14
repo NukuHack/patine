@@ -5,6 +5,7 @@
 use markdown::mdast::Node;
 use unicode_width::UnicodeWidthStr;
 
+use crate::options::{Html, RenderOptions, SoftBreaks};
 use crate::styled::{AnsiColor, StyledLine, TextStyle, Underline};
 
 /// Indentation unit used for nesting (lists, code blocks, etc.).
@@ -116,10 +117,18 @@ pub struct Renderer {
     /// Current blockquote nesting depth. Each level adds a `│ ` prefix to
     /// every line.
     blockquote_depth: usize,
+
+    /// How soft line breaks and raw HTML render.
+    options: RenderOptions,
+
+    /// True while the inline content of a paragraph or heading renders.
+    /// markdown-rs represents inline and block HTML as the same node
+    /// type, so only the place in the tree tells them apart.
+    in_inline_content: bool,
 }
 
 impl Renderer {
-    pub fn new(terminal_width: usize) -> Self {
+    pub fn new(terminal_width: usize, options: RenderOptions) -> Self {
         let content_width = terminal_width;
         Self {
             lines: Vec::new(),
@@ -133,6 +142,8 @@ impl Renderer {
             extra_indent: 0,
             continuation_indent: 0,
             blockquote_depth: 0,
+            options,
+            in_inline_content: false,
         }
     }
 
@@ -154,7 +165,7 @@ impl Renderer {
             Node::Root(root) => self.render_children(&root.children),
             Node::Heading(h) => self.render_heading(h),
             Node::Paragraph(p) => self.render_paragraph(p),
-            Node::Text(t) => self.render_text(&t.value),
+            Node::Text(t) => self.render_running_text(&t.value),
             Node::Strong(s) => self.render_strong(&s.children),
             Node::Emphasis(e) => self.render_emphasis(&e.children),
             Node::Break(_) => self.write_hard_break(),
@@ -169,6 +180,7 @@ impl Renderer {
             Node::Link(l) => self.render_link(l),
             Node::Delete(d) => self.render_strikethrough(&d.children),
             Node::Image(img) => self.render_image(img),
+            Node::Html(html) => self.render_html(&html.value),
             // Fallback: render children if the node has any, silently skip
             // leaf nodes we don't handle yet.
             other => {
@@ -206,7 +218,7 @@ impl Renderer {
         for &style in styles {
             self.push_style(style);
         }
-        self.render_children(&heading.children);
+        self.render_inline_content(&heading.children);
         for _ in styles {
             self.pop_style();
         }
@@ -309,7 +321,7 @@ impl Renderer {
         // nesting indent *and* blockquote bars — via `write_indent`, and
         // the context style (a blockquote's dim italic) under its own.
         let base = self.current_style();
-        for line in crate::table::layout_table(table, self.effective_width()) {
+        for line in crate::table::layout_table(table, self.effective_width(), self.options.html) {
             self.write_indent();
             for span in &line.spans {
                 self.line.push_str(&span.text, base.patch(span.style));
@@ -406,7 +418,7 @@ impl Renderer {
                             self.at_start = false;
                         }
                     }
-                    self.render_children(&p.children);
+                    self.render_inline_content(&p.children);
                 }
                 // Nested lists and other block content get their own indent.
                 // Ensure we're on a new line before starting nested content.
@@ -438,13 +450,62 @@ impl Renderer {
     fn render_paragraph(&mut self, paragraph: &markdown::mdast::Paragraph) {
         self.ensure_block_spacing();
         self.write_indent();
-        self.render_children(&paragraph.children);
+        self.render_inline_content(&paragraph.children);
         self.write_newline();
+    }
+
+    /// Render an HTML block in [`Html::Literal`] mode: its source lines
+    /// verbatim and never wrapped. HTML is part of what the author wrote,
+    /// so it sits at the indent and in the style of the text around it.
+    fn render_html_block(&mut self, html: &str) {
+        self.ensure_block_spacing();
+        for line in split_line_endings(html) {
+            self.write_indent();
+            self.emit(line);
+            self.column = UnicodeWidthStr::width(line);
+            self.consecutive_newlines = 0;
+            self.at_start = false;
+            self.write_newline();
+        }
     }
 
     // =========================================================
     // Inline rendering
     // =========================================================
+
+    /// Render the inline children of a paragraph or heading. Paragraphs
+    /// and headings never nest inside inline content, so the flag is
+    /// simply off again afterwards.
+    fn render_inline_content(&mut self, children: &[Node]) {
+        self.in_inline_content = true;
+        self.render_children(children);
+        self.in_inline_content = false;
+    }
+
+    /// Render running text, from a text node or inline HTML. A line
+    /// ending in it is a soft break, which [`SoftBreaks`] turns into a
+    /// space or a line break.
+    fn render_running_text(&mut self, text: &str) {
+        match self.options.soft_breaks {
+            SoftBreaks::Join => self.render_text(text),
+            SoftBreaks::Break => {
+                for (index, line) in split_line_endings(text).enumerate() {
+                    if index > 0 {
+                        self.write_hard_break();
+                    }
+                    self.render_text(line);
+                }
+            }
+        }
+    }
+
+    fn render_html(&mut self, html: &str) {
+        match self.options.html {
+            Html::Drop => {}
+            Html::Literal if self.in_inline_content => self.render_running_text(html),
+            Html::Literal => self.render_html_block(html),
+        }
+    }
 
     /// Render a text node, splitting on whitespace for word wrapping. Leading
     /// and trailing whitespace in the text is tracked via `pending_space` so
@@ -746,4 +807,11 @@ impl Renderer {
         }
         style
     }
+}
+
+/// Split `text` at CommonMark line endings. markdown-rs keeps them as they
+/// appear in the source: `\n`, `\r\n` or a lone `\r`.
+fn split_line_endings(text: &str) -> impl Iterator<Item = &str> {
+    text.split('\n')
+        .flat_map(|line| line.strip_suffix('\r').unwrap_or(line).split('\r'))
 }

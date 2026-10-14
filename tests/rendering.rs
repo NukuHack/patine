@@ -7,7 +7,10 @@
 //! `ansi.rs`.
 
 use insta::assert_snapshot;
-use patine::{AnsiColor, StyledLine, TextStyle, Underline, render_lines};
+use patine::{
+    AnsiColor, Html, RenderOptions, SoftBreaks, StyledLine, TextStyle, Underline, render_lines,
+    render_lines_with,
+};
 
 /// Render markdown at 80 columns into the canonical text form used by the
 /// snapshots (see [`serialize`]).
@@ -1669,4 +1672,298 @@ fn table_in_blockquote_is_dim_and_italic_throughout() {
             );
         }
     }
+}
+
+// =========================================================
+// Render options
+// =========================================================
+
+const BREAK: RenderOptions = RenderOptions::new().with_soft_breaks(SoftBreaks::Break);
+const LITERAL: RenderOptions = RenderOptions::new().with_html(Html::Literal);
+const BREAK_AND_LITERAL: RenderOptions = BREAK.with_html(Html::Literal);
+
+/// Like [`render_with_width`], with render options.
+fn render_with_options(markdown: &str, width: usize, options: RenderOptions) -> String {
+    serialize(&render_lines_with(markdown, width, &options))
+}
+
+/// Like [`plain_lines`], with render options.
+fn plain_lines_with(markdown: &str, width: usize, options: RenderOptions) -> Vec<String> {
+    render_lines_with(markdown, width, &options)
+        .iter()
+        .map(ToString::to_string)
+        .collect()
+}
+
+/// Documents that use soft breaks and raw HTML in every place the options
+/// look at, plus the showcase.
+fn option_documents() -> Vec<&'static str> {
+    vec![
+        SHOWCASE_MD,
+        "first\nsecond\r\nthird\rfourth",
+        "- item\nmore\n  - nested\n    line\n\n> quoted\n> more",
+        "Use a Vec<String> or <code>x</code> <!-- note -->\n\n<div>\n  block\n</div>",
+        "| a <b>x</b> |\n|---|\n| <br> |",
+        "Foo\nbar\n===\n\n[li\nnk](https://example.com) `co\nde` ![a\nb](u.png)",
+    ]
+}
+
+#[test]
+fn default_options_render_like_render_lines() {
+    // Every snapshot above goes through `render_lines`; this pins that it
+    // and the defaults are one and the same rendering.
+    for markdown in option_documents() {
+        for width in [80, 20] {
+            assert_eq!(
+                render_lines_with(markdown, width, &RenderOptions::default()),
+                render_lines(markdown, width),
+                "{markdown:?} at {width}"
+            );
+        }
+    }
+}
+
+#[test]
+fn options_matrix_snapshot() {
+    // One document under all four combinations, so a single snapshot
+    // shows what each option changes and that they combine independently.
+    let markdown = "Pick **one\nof these**:\n\n- `Vec<String>` or Vec<String>\n  for the <em>list</em>\n- none\n\n<details>\n  <summary>More</summary>\n</details>";
+    let mut out = String::new();
+    for (name, options) in [
+        ("join, drop", RenderOptions::default()),
+        ("break, drop", BREAK),
+        ("join, literal", LITERAL),
+        ("break, literal", BREAK_AND_LITERAL),
+    ] {
+        out.push_str(&format!("== {name}\n"));
+        out.push_str(&render_with_options(markdown, 80, options));
+    }
+    assert_snapshot!(out);
+}
+
+// ---------------------------------------------------------
+// Soft breaks
+// ---------------------------------------------------------
+
+#[test]
+fn soft_breaks_join_by_default() {
+    assert_eq!(
+        plain_lines_with("first\nsecond", 80, RenderOptions::default()),
+        ["first second"]
+    );
+}
+
+#[test]
+fn soft_break_breaks_the_line() {
+    assert_eq!(
+        plain_lines_with("first\nsecond\nthird", 80, BREAK),
+        ["first", "second", "third"]
+    );
+}
+
+#[test]
+fn soft_break_accepts_every_line_ending() {
+    assert_eq!(
+        plain_lines_with("a\r\nb\rc\nd", 80, BREAK),
+        ["a", "b", "c", "d"]
+    );
+}
+
+#[test]
+fn soft_break_keeps_the_styles_across_the_break() {
+    assert_snapshot!(render_with_options(
+        "**bold\nstill bold** plain\n*italic* ~~struck\nstruck~~",
+        80,
+        BREAK
+    ));
+}
+
+#[test]
+fn soft_break_in_list_items_lines_up_with_item_text() {
+    assert_eq!(
+        plain_lines_with("- item\nmore\n  - nested\n    line\n- next", 80, BREAK),
+        ["• item", "  more", "  • nested", "    line", "• next"]
+    );
+}
+
+#[test]
+fn soft_break_in_blockquote_keeps_the_bars() {
+    assert_snapshot!(render_with_options(
+        "> quoted\n> more\n>\n> - item\n>   line",
+        80,
+        BREAK
+    ));
+}
+
+#[test]
+fn soft_break_lines_still_wrap() {
+    assert_eq!(
+        plain_lines_with("one two three four five\nsix", 14, BREAK),
+        ["one two three", "four five", "six"]
+    );
+}
+
+#[test]
+fn soft_and_hard_breaks_mix() {
+    assert_eq!(
+        plain_lines_with("a\\\nb\nc  \nd", 80, BREAK),
+        ["a", "b", "c", "d"]
+    );
+}
+
+#[test]
+fn soft_break_in_link_text_and_setext_heading() {
+    // Link text and a multi-line setext heading are running text too.
+    assert_snapshot!(render_with_options(
+        "Foo\nbar\n===\n\n[link\ntext](https://example.com)",
+        80,
+        BREAK
+    ));
+}
+
+#[test]
+fn soft_break_leaves_code_alt_text_and_frontmatter_alone() {
+    // Inline code and image alt text turn a line ending into a space, and
+    // code blocks and frontmatter keep their lines whatever the option.
+    let markdown =
+        "---\ntitle: x\nlist: [a]\n---\n\n`co\nde` ![a\nb](u.png)\n\n```\nline one\nline two\n```";
+    assert_eq!(
+        render_with_options(markdown, 80, BREAK),
+        render_with_options(markdown, 80, RenderOptions::default())
+    );
+    assert!(
+        plain_lines_with(markdown, 80, BREAK).contains(&"co de [image: a b] (u.png)".to_string())
+    );
+}
+
+// ---------------------------------------------------------
+// HTML
+// ---------------------------------------------------------
+
+#[test]
+fn html_is_dropped_by_default() {
+    assert_eq!(
+        plain_lines_with(
+            "Use a Vec<String> here.\n\n<div>\nblock\n</div>\n\nafter",
+            80,
+            RenderOptions::default()
+        ),
+        ["Use a Vec here.", "", "after"]
+    );
+}
+
+#[test]
+fn inline_html_shows_as_written() {
+    assert_eq!(
+        plain_lines_with(
+            "Use a Vec<String> or <code>x</code> <!-- note --> here.",
+            80,
+            LITERAL
+        ),
+        ["Use a Vec<String> or <code>x</code> <!-- note --> here."]
+    );
+}
+
+#[test]
+fn inline_html_takes_the_surrounding_style() {
+    assert_snapshot!(render_with_options(
+        "**a <b>bold</b> tag**, [a <i>link</i>](https://example.com)\n\n> quoted <span>",
+        80,
+        LITERAL
+    ));
+}
+
+#[test]
+fn inline_html_wraps_like_words() {
+    assert_eq!(
+        plain_lines_with("one <span class=\"x\"> two </span> three", 16, LITERAL),
+        ["one <span", "class=\"x\"> two", "</span> three"]
+    );
+}
+
+#[test]
+fn line_ending_inside_inline_html_follows_soft_breaks() {
+    let markdown = "a <span\nclass=\"x\"> b";
+    assert_eq!(
+        plain_lines_with(markdown, 80, LITERAL),
+        ["a <span class=\"x\"> b"]
+    );
+    assert_eq!(
+        plain_lines_with(markdown, 80, BREAK_AND_LITERAL),
+        ["a <span", "class=\"x\"> b"]
+    );
+}
+
+#[test]
+fn html_block_shows_its_lines_verbatim_without_wrapping() {
+    let markdown = "before\n\n<div>\n  <p>a line far longer than the width</p>\n</div>\n\nafter";
+    assert_eq!(
+        plain_lines_with(markdown, 20, LITERAL),
+        [
+            "before",
+            "",
+            "<div>",
+            "  <p>a line far longer than the width</p>",
+            "</div>",
+            "",
+            "after"
+        ]
+    );
+}
+
+#[test]
+fn html_block_accepts_every_line_ending() {
+    assert_eq!(
+        plain_lines_with("<div>\r\nx\ry\r\n</div>", 80, LITERAL),
+        ["<div>", "x", "y", "</div>"]
+    );
+}
+
+#[test]
+fn html_block_in_blockquote_and_list() {
+    assert_snapshot!(render_with_options(
+        "> <div>\n> quoted\n> </div>\n\n- item\n\n  <div>\n  nested\n  </div>",
+        80,
+        LITERAL
+    ));
+}
+
+#[test]
+fn html_comments_show_as_written() {
+    assert_eq!(
+        plain_lines_with(
+            "<!-- block --> trailing\n\ntext <!-- inline --> more",
+            80,
+            LITERAL
+        ),
+        ["<!-- block --> trailing", "", "text <!-- inline --> more"]
+    );
+}
+
+#[test]
+fn autolinks_stay_links_with_literal_html() {
+    let markdown = "See <https://example.com> now.";
+    assert_eq!(
+        render_with_options(markdown, 80, LITERAL),
+        render_with_options(markdown, 80, RenderOptions::default())
+    );
+    assert_snapshot!(render_with_options(markdown, 80, LITERAL), @"See [underline]https://example.com[][dim] (https://example.com)[] now.");
+}
+
+#[test]
+fn inline_html_in_table_cells() {
+    let markdown = "| a <b>x</b> |\n|---|\n| <br> |";
+    assert_snapshot!(render_with_options(markdown, 80, LITERAL));
+    assert_snapshot!(render_with_options(markdown, 80, RenderOptions::default()));
+}
+
+#[test]
+fn dropped_html_leaves_its_line_empty_when_soft_breaks_break() {
+    // The line endings around a line of dropped HTML still break, so the
+    // line it stood on stays, empty.
+    assert_eq!(plain_lines_with("a\n<span>\nb", 80, BREAK), ["a", "", "b"]);
+    assert_eq!(
+        plain_lines_with("a\n<span>\nb", 80, BREAK_AND_LITERAL),
+        ["a", "<span>", "b"]
+    );
 }

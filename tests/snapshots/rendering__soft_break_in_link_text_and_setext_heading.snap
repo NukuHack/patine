@@ -1,0 +1,9 @@
+---
+source: tests/rendering.rs
+expression: "render_with_options(\"Foo\\nbar\\n===\\n\\n[link\\ntext](https://example.com)\", 80,\nBREAK)"
+---
+[bold,italic,double-underline]Foo[]
+[bold,italic,double-underline]bar[]
+
+[underline]link[]
+[underline]text[][dim] (https://example.com)[]

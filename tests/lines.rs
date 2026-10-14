@@ -7,7 +7,10 @@
 //! return. Layout details are pinned by the snapshots in `rendering.rs`;
 //! these tests cover the contract of the API itself.
 
-use patine::{AnsiColor, StyledLine, StyledSpan, TextStyle, Underline, highlight, render_lines};
+use patine::{
+    AnsiColor, Html, RenderOptions, SoftBreaks, StyledLine, StyledSpan, TextStyle, Underline,
+    highlight, render_lines, render_lines_with,
+};
 
 fn style(edit: impl FnOnce(&mut TextStyle)) -> TextStyle {
     let mut style = TextStyle::default();
@@ -144,6 +147,78 @@ fn width_counts_display_columns_not_bytes() {
 }
 
 // =========================================================
+// Render options
+// =========================================================
+
+/// Options for short text fields whose author means every newline, such
+/// as JSON strings written by a program. Built in a constant to prove the
+/// builders work at compile time.
+const FIELD_OPTIONS: RenderOptions = RenderOptions::new()
+    .with_soft_breaks(SoftBreaks::Break)
+    .with_html(Html::Literal);
+
+#[test]
+fn default_options_follow_commonmark_and_drop_html() {
+    let options = RenderOptions::default();
+    assert_eq!(options.soft_breaks, SoftBreaks::Join);
+    assert_eq!(options.html, Html::Drop);
+    assert_eq!(RenderOptions::new(), options);
+    assert_eq!(SoftBreaks::default(), SoftBreaks::Join);
+    assert_eq!(Html::default(), Html::Drop);
+}
+
+#[test]
+fn builders_set_one_option_each() {
+    let breaks = RenderOptions::new().with_soft_breaks(SoftBreaks::Break);
+    assert_eq!(breaks.soft_breaks, SoftBreaks::Break);
+    assert_eq!(breaks.html, Html::Drop);
+
+    let html = RenderOptions::new().with_html(Html::Literal);
+    assert_eq!(html.soft_breaks, SoftBreaks::Join);
+    assert_eq!(html.html, Html::Literal);
+
+    assert_eq!(FIELD_OPTIONS.soft_breaks, SoftBreaks::Break);
+    assert_eq!(FIELD_OPTIONS.html, Html::Literal);
+}
+
+#[test]
+fn options_fields_can_be_set_directly() {
+    let mut options = RenderOptions::default();
+    options.soft_breaks = SoftBreaks::Break;
+    options.html = Html::Literal;
+    assert_eq!(options, FIELD_OPTIONS);
+}
+
+#[test]
+fn render_lines_renders_with_the_default_options() {
+    let markdown = "one\ntwo <b>three</b>\n\n<div>\nblock\n</div>";
+    assert_eq!(
+        render_lines(markdown, 80),
+        render_lines_with(markdown, 80, &RenderOptions::default())
+    );
+    assert_eq!(texts(&render_lines(markdown, 80)), ["one two three"]);
+}
+
+#[test]
+fn field_options_break_lines_and_show_html() {
+    let lines = render_lines_with("Use a Vec<String>\nhere.", 80, &FIELD_OPTIONS);
+    assert_eq!(texts(&lines), ["Use a Vec<String>", "here."]);
+}
+
+#[test]
+fn render_with_writes_the_lines_of_render_lines_with() {
+    let markdown = "**one**\ntwo <b>";
+    let mut output = Vec::new();
+    patine::render_with(markdown, &mut output, 80, &FIELD_OPTIONS)
+        .expect("writing to a Vec cannot fail");
+    assert_eq!(output, b"\x1b[1mone\x1b[22m\ntwo <b>\n");
+
+    let mut joined = Vec::new();
+    patine::render(markdown, &mut joined, 80).expect("writing to a Vec cannot fail");
+    assert_eq!(joined, b"\x1b[1mone\x1b[22m two\n");
+}
+
+// =========================================================
 // highlight
 // =========================================================
 
@@ -246,4 +321,7 @@ fn types_are_send_and_sync() {
     assert_send_sync::<TextStyle>();
     assert_send_sync::<Underline>();
     assert_send_sync::<AnsiColor>();
+    assert_send_sync::<RenderOptions>();
+    assert_send_sync::<SoftBreaks>();
+    assert_send_sync::<Html>();
 }

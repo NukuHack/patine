@@ -1,0 +1,9 @@
+---
+source: tests/rendering.rs
+expression: "render_with_options(markdown, 80, RenderOptions::default())"
+---
+┌─────┐
+│ [bold]a x[] │
+├─────┤
+│     │
+└─────┘
