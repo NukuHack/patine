@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on `crossterm`, which only the `cli` feature pulls in now.
 - A code block that syntect fails to highlight renders in the flat code
   color instead of making `render` return an error.
+- `render` switches the styles of every span on before it and off after
+  it. The escape sequences in the output therefore differ from 1.4.0
+  even where the text looks the same on screen.
 
 ### Fixed
 
