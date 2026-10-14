@@ -2,15 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::io::Write;
-
-use anyhow::{Context, Result};
-use crossterm::{
-    queue,
-    style::{Attribute, Color, SetAttribute, SetForegroundColor},
-};
 use markdown::mdast::Node;
 use unicode_width::UnicodeWidthStr;
+
+use crate::styled::{AnsiColor, StyledLine, TextStyle, Underline};
 
 /// Indentation unit used for nesting (lists, code blocks, etc.).
 const NEST_INDENT: &str = "  ";
@@ -26,14 +21,27 @@ const _: () = assert!(
 );
 
 /// Foreground color used for inline code and code blocks.
-const CODE_COLOR: Color = Color::DarkYellow;
+const CODE_COLOR: AnsiColor = AnsiColor::Yellow;
+
+/// Prefix for each blockquote nesting level.
+const BLOCKQUOTE_BAR: &str = "│ ";
+
+/// Blockquote bars are dim whatever the quoted content looks like.
+const BAR_STYLE: TextStyle = TextStyle {
+    bold: false,
+    italic: false,
+    dim: true,
+    strikethrough: false,
+    underline: Underline::None,
+    foreground: None,
+};
 
 // =========================================================
 // Style tracking
 // =========================================================
 
-/// Terminal text attributes that can be pushed onto the style stack and
-/// re-applied after line wraps.
+/// Text attributes that Markdown nodes push onto the style stack while
+/// their content renders.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Style {
     Bold,
@@ -42,15 +50,26 @@ enum Style {
     DoubleUnderline,
     Dim,
     Strikethrough,
-    ForegroundColor(Color),
+    ForegroundColor(AnsiColor),
 }
 
 // =========================================================
 // Renderer
 // =========================================================
 
-pub struct Renderer<'w, W: Write> {
-    writer: &'w mut W,
+/// Walks the Markdown tree and lays it out as styled lines.
+///
+/// Text goes into the line under construction, each piece styled from the
+/// style stack at the time it is written. `write_newline` closes that
+/// line. Because every span carries its complete style, a line wrap needs
+/// no re-application of styles: the next span is styled from the same
+/// stack.
+pub struct Renderer {
+    /// Finished lines, in output order.
+    lines: Vec<StyledLine>,
+
+    /// The line under construction.
+    line: StyledLine,
 
     /// Available content width in columns, excluding the global indent.
     /// Derived from the terminal width at construction time.
@@ -80,8 +99,8 @@ pub struct Renderer<'w, W: Write> {
     pending_space: bool,
 
     /// Stack of active inline styles. Styles are pushed when entering a
-    /// styled node and popped when leaving. The full stack is re-applied
-    /// after a line wrap so that styling continues on the new line.
+    /// styled node and popped when leaving. Content written in between is
+    /// styled from the whole stack (see `current_style`).
     style_stack: Vec<Style>,
 
     /// Extra indentation depth (in units of 2 spaces) for nested structures
@@ -97,11 +116,12 @@ pub struct Renderer<'w, W: Write> {
     blockquote_depth: usize,
 }
 
-impl<'w, W: Write> Renderer<'w, W> {
-    pub fn new(writer: &'w mut W, terminal_width: usize) -> Self {
+impl Renderer {
+    pub fn new(terminal_width: usize) -> Self {
         let content_width = terminal_width;
         Self {
-            writer,
+            lines: Vec::new(),
+            line: StyledLine::default(),
             content_width,
             column: 0,
             consecutive_newlines: 0,
@@ -114,20 +134,20 @@ impl<'w, W: Write> Renderer<'w, W> {
         }
     }
 
-    /// Finalize the output. Ensures non-empty output ends with exactly one
-    /// trailing newline. Empty input produces empty output.
-    pub fn finish(&mut self) -> Result<()> {
+    /// Finalize the output and return its lines. Closes a line still under
+    /// construction; empty input produces no lines.
+    pub fn finish(mut self) -> Vec<StyledLine> {
         if !self.at_start && self.consecutive_newlines == 0 {
-            self.write_newline()?;
+            self.write_newline();
         }
-        Ok(())
+        self.lines
     }
 
     // =========================================================
     // Node dispatch
     // =========================================================
 
-    pub fn render_node(&mut self, node: &Node) -> Result<()> {
+    pub fn render_node(&mut self, node: &Node) {
         match node {
             Node::Root(root) => self.render_children(&root.children),
             Node::Heading(h) => self.render_heading(h),
@@ -138,10 +158,8 @@ impl<'w, W: Write> Renderer<'w, W> {
             // Hard break (trailing backslash or two spaces): emit a
             // newline within the current block.
             Node::Break(_) => {
-                self.write_newline()?;
-                self.write_indent()?;
-                self.reapply_styles()?;
-                Ok(())
+                self.write_newline();
+                self.write_indent();
             }
             Node::InlineCode(c) => self.render_inline_code(&c.value),
             Node::List(l) => self.render_list(l),
@@ -158,27 +176,25 @@ impl<'w, W: Write> Renderer<'w, W> {
             // leaf nodes we don't handle yet.
             other => {
                 if let Some(children) = other.children() {
-                    self.render_children(children)?;
+                    self.render_children(children);
                 }
-                Ok(())
             }
         }
     }
 
-    fn render_children(&mut self, children: &[Node]) -> Result<()> {
+    fn render_children(&mut self, children: &[Node]) {
         for child in children {
-            self.render_node(child)?;
+            self.render_node(child);
         }
-        Ok(())
     }
 
     // =========================================================
     // Block-level rendering
     // =========================================================
 
-    fn render_heading(&mut self, heading: &markdown::mdast::Heading) -> Result<()> {
-        self.ensure_block_spacing()?;
-        self.write_indent()?;
+    fn render_heading(&mut self, heading: &markdown::mdast::Heading) {
+        self.ensure_block_spacing();
+        self.write_indent();
 
         // Heading hierarchy: every level is bold (consistent baseline),
         // and underline decorations create the H1/H2/H3+ visual ladder.
@@ -191,15 +207,14 @@ impl<'w, W: Write> Renderer<'w, W> {
             _ => &[Style::Bold],
         };
         for &style in styles {
-            self.push_style(style)?;
+            self.push_style(style);
         }
-        self.render_children(&heading.children)?;
+        self.render_children(&heading.children);
         for _ in styles {
-            self.pop_style()?;
+            self.pop_style();
         }
 
-        self.write_newline()?;
-        Ok(())
+        self.write_newline();
     }
 
     /// Render verbatim text as a code-block-shaped element. Serves both
@@ -209,12 +224,12 @@ impl<'w, W: Write> Renderer<'w, W> {
     /// (e.g. `` ```rust ``), tokens are syntax-highlighted using the
     /// bat-authored `Ansi` theme (ANSI palette indices 0–7) so that
     /// colors resolve against the user's terminal theme. When the
-    /// language is missing or unknown, the block falls back to the
-    /// flat `CODE_COLOR` rendering path that predates highlighting.
-    /// In both cases, content is written verbatim with each line
-    /// indented one level and never word-wrapped.
-    fn render_fenced_text(&mut self, value: &str, lang: Option<&str>) -> Result<()> {
-        self.ensure_block_spacing()?;
+    /// language is missing or unknown, or when highlighting fails, the
+    /// block falls back to the flat `CODE_COLOR` rendering. In both
+    /// cases, content is written verbatim with each line indented one
+    /// level and never word-wrapped.
+    fn render_fenced_text(&mut self, value: &str, lang: Option<&str>) {
+        self.ensure_block_spacing();
 
         // Code blocks get an extra 2-space indent beyond the global
         // indent to visually separate them from surrounding prose.
@@ -223,14 +238,18 @@ impl<'w, W: Write> Renderer<'w, W> {
         // highlighted and fallback modes.
         self.extra_indent += 1;
 
-        let syntax = crate::highlight::syntax_for(lang);
-        let result = match syntax {
-            Some(syntax) => self.render_code_block_highlighted(value, syntax),
+        // A highlighting failure is a limit of syntect's regex engine on
+        // this particular text, not a problem of the document. The block
+        // then renders like one without a language rather than failing
+        // the whole render.
+        let highlighted = crate::highlight::syntax_for(lang)
+            .and_then(|syntax| crate::highlight::highlight_code(value, syntax).ok());
+        match highlighted {
+            Some(lines) => self.render_code_block_highlighted(&lines),
             None => self.render_code_block_plain(value),
-        };
+        }
 
         self.extra_indent -= 1;
-        result
     }
 
     /// Render a YAML (`---`) or TOML (`+++`) frontmatter block as a
@@ -241,99 +260,63 @@ impl<'w, W: Write> Renderer<'w, W> {
     /// the fence lines are reconstructed around it so the rendered block
     /// mirrors the source document. Empty frontmatter carries no metadata
     /// and renders nothing at all.
-    fn render_frontmatter(&mut self, value: &str, fence: &str, lang: &str) -> Result<()> {
+    fn render_frontmatter(&mut self, value: &str, fence: &str, lang: &str) {
         if value.trim().is_empty() {
-            return Ok(());
+            return;
         }
         let fenced = format!("{fence}\n{value}\n{fence}");
-        self.render_fenced_text(&fenced, Some(lang))
+        self.render_fenced_text(&fenced, Some(lang));
     }
 
     /// Flat-color code block rendering used for fences without a
-    /// recognized language identifier. Produces byte-for-byte the
-    /// same output as the pre-highlighting implementation.
-    fn render_code_block_plain(&mut self, value: &str) -> Result<()> {
-        self.push_style(Style::ForegroundColor(CODE_COLOR))?;
+    /// recognized language identifier.
+    fn render_code_block_plain(&mut self, value: &str) {
+        self.push_style(Style::ForegroundColor(CODE_COLOR));
         for line in value.lines() {
-            self.write_indent()?;
-            write!(self.writer, "{line}").context("write code line")?;
+            self.write_indent();
+            self.emit(line);
             self.column = UnicodeWidthStr::width(line);
             self.consecutive_newlines = 0;
             self.at_start = false;
-            self.write_newline()?;
+            self.write_newline();
         }
-        self.pop_style()?;
-        Ok(())
+        self.pop_style();
     }
 
-    /// Syntax-highlighted code block rendering. Uses a single
-    /// `HighlightLines` instance for the whole block so multi-line
-    /// lexer state (block comments, multi-line strings) is carried
-    /// across lines. Per-token styles are pushed and popped on the
-    /// renderer's style stack so that the existing reapply-after-
-    /// indent machinery (blockquote bars, nested contexts) keeps
-    /// working without further changes.
-    fn render_code_block_highlighted(
-        &mut self,
-        value: &str,
-        syntax: &syntect::parsing::SyntaxReference,
-    ) -> Result<()> {
-        let mut hl = crate::highlight::new_highlighter(syntax);
-        for line in value.lines() {
-            // `extra_newlines` grammars require each input line to
-            // terminate in `\n`; we strip it back off per-token in
-            // the highlight helper.
-            let line_nl = format!("{line}\n");
-            let tokens = crate::highlight::highlight_line(&mut hl, &line_nl)?;
-
-            self.write_indent()?;
+    /// Syntax-highlighted code block rendering. Each token keeps the
+    /// surrounding context style (a blockquote's dim italic) and adds its
+    /// own color, bold and italic on top.
+    fn render_code_block_highlighted(&mut self, lines: &[StyledLine]) {
+        let base = self.current_style();
+        for line in lines {
+            self.write_indent();
             let mut column: usize = 0;
-            for tok in tokens {
-                // Push whichever subset of styles applies to this
-                // token, emit the text, then unwind the same number
-                // of styles we pushed. The renderer's existing
-                // `pop_style` re-emits any outer foreground color
-                // automatically, so nested contexts are safe.
-                let mut pushed = 0usize;
-                if let Some(fg) = tok.fg {
-                    self.push_style(Style::ForegroundColor(fg))?;
-                    pushed += 1;
-                }
-                if tok.bold {
-                    self.push_style(Style::Bold)?;
-                    pushed += 1;
-                }
-                if tok.italic {
-                    self.push_style(Style::Italic)?;
-                    pushed += 1;
-                }
-                write!(self.writer, "{}", tok.text).context("write code token")?;
-                column += UnicodeWidthStr::width(tok.text);
-                for _ in 0..pushed {
-                    self.pop_style()?;
-                }
+            for span in &line.spans {
+                self.line.push_str(&span.text, base.patch(span.style));
+                column += UnicodeWidthStr::width(span.text.as_str());
             }
             self.column = column;
             self.consecutive_newlines = 0;
             self.at_start = false;
-            self.write_newline()?;
+            self.write_newline();
         }
-        Ok(())
     }
 
-    fn render_table(&mut self, table: &markdown::mdast::Table) -> Result<()> {
-        self.ensure_block_spacing()?;
+    fn render_table(&mut self, table: &markdown::mdast::Table) {
+        self.ensure_block_spacing();
 
         // The table module is pure: it lays out the table as a list of
-        // pre-formatted content lines (box-drawing characters, cell text,
-        // and any SGR escapes for bold headers) without any per-line
-        // prefix. We walk the lines here so that each one receives the
-        // renderer's normal line prefix — nesting indent *and* blockquote
-        // bars — via `write_indent`. This matches the pattern used by
-        // `render_code_block`.
+        // styled content lines (box-drawing characters, cell text, bold
+        // headers) without any per-line prefix. We walk the lines here so
+        // that each one receives the renderer's normal line prefix —
+        // nesting indent *and* blockquote bars — via `write_indent`, and
+        // the context style (a blockquote's dim italic) under its own.
+        let base = self.current_style();
         for line in crate::table::layout_table(table, self.effective_width()) {
-            self.write_indent()?;
-            write!(self.writer, "{line}").context("write table line")?;
+            self.write_indent();
+            for span in &line.spans {
+                self.line.push_str(&span.text, base.patch(span.style));
+            }
             // Table rows occupy full content lines; once the line is
             // emitted, the next call must treat us as if we're mid-line
             // so `write_newline` can terminate the row cleanly. The
@@ -341,53 +324,45 @@ impl<'w, W: Write> Renderer<'w, W> {
             self.column = 0;
             self.consecutive_newlines = 0;
             self.at_start = false;
-            self.write_newline()?;
+            self.write_newline();
         }
-        Ok(())
     }
 
-    fn render_blockquote(&mut self, children: &[Node]) -> Result<()> {
+    fn render_blockquote(&mut self, children: &[Node]) {
         // Block spacing must be ensured BEFORE entering the blockquote
         // context. Otherwise the blank separator line would get the │ bar
         // prefix, which visually belongs inside the blockquote, not between
         // the preceding block and the blockquote.
-        self.ensure_block_spacing()?;
+        self.ensure_block_spacing();
         self.blockquote_depth += 1;
-        self.push_style(Style::Dim)?;
-        self.push_style(Style::Italic)?;
-        self.render_children(children)?;
-        self.pop_style()?;
-        self.pop_style()?;
+        self.push_style(Style::Dim);
+        self.push_style(Style::Italic);
+        self.render_children(children);
+        self.pop_style();
+        self.pop_style();
         self.blockquote_depth -= 1;
-        Ok(())
     }
 
-    fn render_list(&mut self, list: &markdown::mdast::List) -> Result<()> {
+    fn render_list(&mut self, list: &markdown::mdast::List) {
         // Top-level lists need block spacing from surrounding content.
         // Nested lists (inside list items) only need a line break — the
         // parent item's content already ended with one.
         if self.extra_indent == 0 {
-            self.ensure_block_spacing()?;
+            self.ensure_block_spacing();
         }
         let mut number = list.start.unwrap_or(1);
 
         for child in &list.children {
             if let Node::ListItem(item) = child {
-                self.render_list_item(item, list.ordered, number)?;
+                self.render_list_item(item, list.ordered, number);
                 number += 1;
             }
         }
-        Ok(())
     }
 
-    fn render_list_item(
-        &mut self,
-        item: &markdown::mdast::ListItem,
-        ordered: bool,
-        number: u32,
-    ) -> Result<()> {
-        self.ensure_line_break()?;
-        self.write_indent()?;
+    fn render_list_item(&mut self, item: &markdown::mdast::ListItem, ordered: bool, number: u32) {
+        self.ensure_line_break();
+        self.write_indent();
 
         // Write the bullet or number prefix.
         let prefix = if ordered {
@@ -395,7 +370,7 @@ impl<'w, W: Write> Renderer<'w, W> {
         } else {
             "• ".to_string()
         };
-        write!(self.writer, "{prefix}").context("write list marker")?;
+        self.emit(&prefix);
         let prefix_width = UnicodeWidthStr::width(prefix.as_str());
         self.column += prefix_width;
         self.consecutive_newlines = 0;
@@ -426,26 +401,22 @@ impl<'w, W: Write> Renderer<'w, W> {
             match child {
                 Node::Paragraph(p) => {
                     if !is_first {
-                        self.ensure_block_spacing()?;
-                        self.write_indent()?;
+                        self.ensure_block_spacing();
+                        self.write_indent();
                         if self.continuation_indent > 0 {
-                            let spaces = " ".repeat(self.continuation_indent);
-                            write!(self.writer, "{spaces}")
-                                .context("write list continuation indent")?;
-                            self.column += self.continuation_indent;
+                            self.write_continuation_indent();
                             self.consecutive_newlines = 0;
                             self.at_start = false;
                         }
-                        self.reapply_styles()?;
                     }
-                    self.render_children(&p.children)?;
+                    self.render_children(&p.children);
                 }
                 // Nested lists and other block content get their own indent.
                 // Ensure we're on a new line before starting nested content.
                 other => {
-                    self.ensure_line_break()?;
+                    self.ensure_line_break();
                     self.extra_indent += 1;
-                    self.render_node(other)?;
+                    self.render_node(other);
                     self.extra_indent -= 1;
                 }
             }
@@ -453,28 +424,25 @@ impl<'w, W: Write> Renderer<'w, W> {
         }
 
         self.continuation_indent = prev_continuation;
-        self.ensure_line_break()?;
-        Ok(())
+        self.ensure_line_break();
     }
 
-    fn render_thematic_break(&mut self) -> Result<()> {
-        self.ensure_block_spacing()?;
-        self.write_indent()?;
+    fn render_thematic_break(&mut self) {
+        self.ensure_block_spacing();
+        self.write_indent();
         let width = self.effective_width();
-        write!(self.writer, "{}", "─".repeat(width)).context("write thematic break")?;
+        self.emit(&"─".repeat(width));
         self.column = width;
         self.consecutive_newlines = 0;
         self.at_start = false;
-        self.write_newline()?;
-        Ok(())
+        self.write_newline();
     }
 
-    fn render_paragraph(&mut self, paragraph: &markdown::mdast::Paragraph) -> Result<()> {
-        self.ensure_block_spacing()?;
-        self.write_indent()?;
-        self.render_children(&paragraph.children)?;
-        self.write_newline()?;
-        Ok(())
+    fn render_paragraph(&mut self, paragraph: &markdown::mdast::Paragraph) {
+        self.ensure_block_spacing();
+        self.write_indent();
+        self.render_children(&paragraph.children);
+        self.write_newline();
     }
 
     // =========================================================
@@ -484,9 +452,9 @@ impl<'w, W: Write> Renderer<'w, W> {
     /// Render a text node, splitting on whitespace for word wrapping. Leading
     /// and trailing whitespace in the text is tracked via `pending_space` so
     /// that spacing between adjacent inline nodes is preserved.
-    fn render_text(&mut self, text: &str) -> Result<()> {
+    fn render_text(&mut self, text: &str) {
         if text.is_empty() {
-            return Ok(());
+            return;
         }
 
         if text.starts_with(char::is_whitespace) {
@@ -500,62 +468,60 @@ impl<'w, W: Write> Renderer<'w, W> {
             } else {
                 self.pending_space = true;
             }
-            self.write_word(word)?;
+            self.write_word(word);
         }
 
         if text.ends_with(char::is_whitespace) {
             self.pending_space = true;
         }
-
-        Ok(())
     }
 
-    fn render_strong(&mut self, children: &[Node]) -> Result<()> {
-        self.push_style(Style::Bold)?;
-        self.render_children(children)?;
-        self.pop_style()
+    fn render_strong(&mut self, children: &[Node]) {
+        self.push_style(Style::Bold);
+        self.render_children(children);
+        self.pop_style();
     }
 
-    fn render_emphasis(&mut self, children: &[Node]) -> Result<()> {
-        self.push_style(Style::Italic)?;
-        self.render_children(children)?;
-        self.pop_style()
+    fn render_emphasis(&mut self, children: &[Node]) {
+        self.push_style(Style::Italic);
+        self.render_children(children);
+        self.pop_style();
     }
 
-    fn render_strikethrough(&mut self, children: &[Node]) -> Result<()> {
-        self.push_style(Style::Strikethrough)?;
-        self.render_children(children)?;
-        self.pop_style()
+    fn render_strikethrough(&mut self, children: &[Node]) {
+        self.push_style(Style::Strikethrough);
+        self.render_children(children);
+        self.pop_style();
     }
 
-    fn render_image(&mut self, image: &markdown::mdast::Image) -> Result<()> {
+    fn render_image(&mut self, image: &markdown::mdast::Image) {
         let marker = if image.alt.is_empty() {
             "[image]".to_string()
         } else {
             format!("[image: {}]", image.alt)
         };
-        self.render_text(&marker)?;
-        self.write_dimmed_url_suffix(&image.url)
+        self.render_text(&marker);
+        self.write_dimmed_url_suffix(&image.url);
     }
 
-    fn render_inline_code(&mut self, code: &str) -> Result<()> {
-        self.push_style(Style::ForegroundColor(CODE_COLOR))?;
-        self.render_text(code)?;
-        self.pop_style()
+    fn render_inline_code(&mut self, code: &str) {
+        self.push_style(Style::ForegroundColor(CODE_COLOR));
+        self.render_text(code);
+        self.pop_style();
     }
 
-    fn render_link(&mut self, link: &markdown::mdast::Link) -> Result<()> {
+    fn render_link(&mut self, link: &markdown::mdast::Link) {
         // Flush any pending space before enabling underline, so the space
         // between the preceding word and the link text is not underlined.
         if self.pending_space && self.column > 0 {
-            write!(self.writer, " ").context("write space")?;
+            self.emit(" ");
             self.column += 1;
             self.pending_space = false;
         }
-        self.push_style(Style::Underline)?;
-        self.render_children(&link.children)?;
-        self.pop_style()?;
-        self.write_dimmed_url_suffix(&link.url)
+        self.push_style(Style::Underline);
+        self.render_children(&link.children);
+        self.pop_style();
+        self.write_dimmed_url_suffix(&link.url);
     }
 
     /// Write a URL in dimmed parentheses as a suffix to the previous inline
@@ -565,7 +531,7 @@ impl<'w, W: Write> Renderer<'w, W> {
     /// line. The URL itself is never broken mid-string — on a narrow
     /// terminal it may overflow its own line, which is preferable to
     /// rendering it uncopyable.
-    fn write_dimmed_url_suffix(&mut self, url: &str) -> Result<()> {
+    fn write_dimmed_url_suffix(&mut self, url: &str) {
         let url_width = UnicodeWidthStr::width(url);
         let suffix_width = url_width + 2; // "(" + url + ")"
 
@@ -574,7 +540,7 @@ impl<'w, W: Write> Renderer<'w, W> {
         // suffix starts on a fresh line.
         let mut need_space = self.column > 0;
         if need_space && self.column + 1 + suffix_width > self.effective_width() {
-            self.wrap_line()?;
+            self.wrap_line();
             // After wrap_line we are at the start of the content area for
             // the new line (column may still be > 0 due to continuation
             // indent, but conceptually we're "at the start" and should not
@@ -583,16 +549,16 @@ impl<'w, W: Write> Renderer<'w, W> {
         }
         self.pending_space = false;
 
-        self.push_style(Style::Dim)?;
+        self.push_style(Style::Dim);
         if need_space {
-            write!(self.writer, " ").context("write space before url")?;
+            self.emit(" ");
             self.column += 1;
         }
-        write!(self.writer, "({url})").context("write url suffix")?;
+        self.emit(&format!("({url})"));
         self.column += suffix_width;
         self.consecutive_newlines = 0;
         self.at_start = false;
-        self.pop_style()
+        self.pop_style();
     }
 
     // =========================================================
@@ -602,42 +568,37 @@ impl<'w, W: Write> Renderer<'w, W> {
     /// Write a single word, preceded by a space if `pending_space` is set.
     /// Wraps to a new line when the word would exceed the available content
     /// width.
-    fn write_word(&mut self, word: &str) -> Result<()> {
+    fn write_word(&mut self, word: &str) {
         let width = UnicodeWidthStr::width(word);
 
         if self.pending_space && self.column > 0 {
             if self.column + 1 + width > self.effective_width() {
-                self.wrap_line()?;
+                self.wrap_line();
             } else {
-                write!(self.writer, " ").context("write space")?;
+                self.emit(" ");
                 self.column += 1;
             }
         } else if self.column > 0 && self.column + width > self.effective_width() {
             // No space requested but the word still doesn't fit.
-            self.wrap_line()?;
+            self.wrap_line();
         }
 
         self.pending_space = false;
-        write!(self.writer, "{word}").context("write word")?;
+        self.emit(word);
         self.column += width;
         self.consecutive_newlines = 0;
         self.at_start = false;
-        Ok(())
     }
 
-    /// Break to a new line and re-apply the current style stack, so that
-    /// inline formatting continues seamlessly on the wrapped line.
-    fn wrap_line(&mut self) -> Result<()> {
-        self.write_newline()?;
-        self.write_indent()?;
+    /// Break to a new line and indent it so that wrapped text lines up
+    /// with the text above it.
+    fn wrap_line(&mut self) {
+        self.write_newline();
+        self.write_indent();
         // Add continuation indent to align past list bullet/number.
         if self.continuation_indent > 0 {
-            let spaces = " ".repeat(self.continuation_indent);
-            write!(self.writer, "{spaces}").context("write continuation indent")?;
-            self.column += self.continuation_indent;
+            self.write_continuation_indent();
         }
-        self.reapply_styles()?;
-        Ok(())
     }
 
     // =========================================================
@@ -655,33 +616,29 @@ impl<'w, W: Write> Renderer<'w, W> {
             .max(1)
     }
 
-    fn write_newline(&mut self) -> Result<()> {
-        writeln!(self.writer).context("write newline")?;
-        self.column = 0;
-        self.consecutive_newlines += 1;
-        Ok(())
+    /// Append `text` to the current line in the style of the style stack.
+    /// Column and spacing bookkeeping stays with the caller.
+    fn emit(&mut self, text: &str) {
+        let style = self.current_style();
+        self.line.push_str(text, style);
     }
 
-    fn write_indent(&mut self) -> Result<()> {
+    fn write_newline(&mut self) {
+        self.lines.push(std::mem::take(&mut self.line));
+        self.column = 0;
+        self.consecutive_newlines += 1;
+    }
+
+    /// Write the line prefix: one unstyled indent per nesting level, then
+    /// one dim `│ ` bar per blockquote level. The prefix is layout, so it
+    /// never takes on the style of the content around it.
+    fn write_indent(&mut self) {
         let has_indent = self.extra_indent > 0 || self.blockquote_depth > 0;
 
-        for _ in 0..self.extra_indent {
-            write!(self.writer, "{NEST_INDENT}").context("write nesting indent")?;
-        }
-        // Blockquote bars: each nesting level adds "│ ". The bars themselves
-        // are always dim, independently of the content style. We apply Dim
-        // directly (not via the style stack) and then use NormalIntensity to
-        // clear it — which has the SGR 22 side-effect of also clearing Bold
-        // (see `disable_style` for details). The subsequent `reapply_styles`
-        // restores the correct content styling.
-        if self.blockquote_depth > 0 {
-            queue!(self.writer, SetAttribute(Attribute::Dim))?;
-            for _ in 0..self.blockquote_depth {
-                write!(self.writer, "│ ").context("write blockquote bar")?;
-            }
-            queue!(self.writer, SetAttribute(Attribute::NormalIntensity))?;
-            self.reapply_styles()?;
-        }
+        self.line
+            .push_str(&NEST_INDENT.repeat(self.extra_indent), TextStyle::default());
+        self.line
+            .push_str(&BLOCKQUOTE_BAR.repeat(self.blockquote_depth), BAR_STYLE);
 
         // Only update output-tracking state when we actually wrote something,
         // so that a zero-indent call doesn't silently claim output occurred.
@@ -690,7 +647,15 @@ impl<'w, W: Write> Renderer<'w, W> {
             self.at_start = false;
             self.pending_space = false;
         }
-        Ok(())
+    }
+
+    /// Write the spaces that align a wrapped or follow-up line of a list
+    /// item past its bullet or number. Like the line prefix, they are
+    /// unstyled.
+    fn write_continuation_indent(&mut self) {
+        self.line
+            .push_str(&" ".repeat(self.continuation_indent), TextStyle::default());
+        self.column += self.continuation_indent;
     }
 
     /// Insert blank-line separation before a block element. Writes newlines
@@ -699,179 +664,74 @@ impl<'w, W: Write> Renderer<'w, W> {
     ///
     /// When inside a blockquote, the blank line includes the indent and `│`
     /// bar prefix so that the visual bar column is unbroken.
-    fn ensure_block_spacing(&mut self) -> Result<()> {
+    fn ensure_block_spacing(&mut self) {
         if self.at_start {
-            return Ok(());
+            return;
         }
         if self.consecutive_newlines >= 2 {
             // Block spacing is already satisfied.
-            return Ok(());
+            return;
         }
         if self.blockquote_depth > 0 {
             if self.consecutive_newlines == 0 {
-                self.write_newline()?;
+                self.write_newline();
             }
             // Write a blank line that carries the blockquote bar prefix.
-            self.write_indent()?;
-            self.write_newline()?;
+            self.write_indent();
+            self.write_newline();
             // write_indent resets consecutive_newlines to 0, and the
             // subsequent write_newline sets it to 1. Force it to 2 so that
             // callers see the block spacing as satisfied.
             self.consecutive_newlines = 2;
         } else {
             while self.consecutive_newlines < 2 {
-                self.write_newline()?;
+                self.write_newline();
             }
         }
-        Ok(())
     }
 
     /// Ensure we're on a fresh line, but don't require a full blank-line gap.
     /// Used between list items which should be visually tight.
-    fn ensure_line_break(&mut self) -> Result<()> {
+    fn ensure_line_break(&mut self) {
         if self.at_start {
-            return Ok(());
+            return;
         }
         if self.consecutive_newlines == 0 {
-            self.write_newline()?;
+            self.write_newline();
         }
-        Ok(())
     }
 
     // =========================================================
     // Style management
     // =========================================================
 
-    fn push_style(&mut self, style: Style) -> Result<()> {
+    fn push_style(&mut self, style: Style) {
         self.style_stack.push(style);
-        self.enable_style(style)
     }
 
-    fn pop_style(&mut self) -> Result<()> {
-        let style = self
-            .style_stack
+    fn pop_style(&mut self) {
+        self.style_stack
             .pop()
             .expect("style stack is never empty when pop_style is called");
-        self.disable_style(style)
     }
 
-    fn enable_style(&mut self, style: Style) -> Result<()> {
-        match style {
-            Style::Bold => queue!(self.writer, SetAttribute(Attribute::Bold))?,
-            Style::Italic => queue!(self.writer, SetAttribute(Attribute::Italic))?,
-            Style::Underline => queue!(self.writer, SetAttribute(Attribute::Underlined))?,
-            Style::DoubleUnderline => {
-                queue!(self.writer, SetAttribute(Attribute::DoubleUnderlined))?;
-            }
-            Style::Dim => queue!(self.writer, SetAttribute(Attribute::Dim))?,
-            Style::Strikethrough => queue!(self.writer, SetAttribute(Attribute::CrossedOut))?,
-            Style::ForegroundColor(c) => queue!(self.writer, SetForegroundColor(c))?,
-        }
-        Ok(())
-    }
-
-    /// Emit the escape sequence that disables a style.
-    ///
-    /// ANSI SGR has shared reset codes that affect multiple attributes at
-    /// once. Two cases require compensating re-application after the reset:
-    ///
-    ///   - **Dim (SGR 2)**: There is no dedicated "NoDim" SGR code.
-    ///     Crossterm uses `NormalIntensity` (SGR 22), which resets *both*
-    ///     Bold and Dim. If Bold is still active on the style stack we must
-    ///     re-emit SGR 1 immediately after.
-    ///
-    ///   - **ForegroundColor**: `SetForegroundColor(Color::Reset)` (SGR 39)
-    ///     clears the foreground to the terminal default. If a color from an
-    ///     outer scope is still on the stack (e.g., code color inside a
-    ///     blockquote that also sets a color) we must re-apply it.
-    ///
-    /// These workarounds are inherent to the SGR model and cannot be avoided
-    /// without a full "recompute all active attributes from scratch" reset,
-    /// which would be more expensive.
-    fn disable_style(&mut self, style: Style) -> Result<()> {
-        match style {
-            // NoBold (SGR 21) is interpreted as "doubly underlined" by many
-            // terminals. Use NormalIntensity (SGR 22) instead, which clears
-            // both Bold and Dim. Re-apply Bold itself (when an outer Bold
-            // is still on the stack — e.g. inline `**bold**` inside a bold
-            // heading) and Dim (when an outer Dim is still on the stack).
-            Style::Bold => {
-                queue!(self.writer, SetAttribute(Attribute::NormalIntensity))?;
-                if self.style_stack.contains(&Style::Bold) {
-                    queue!(self.writer, SetAttribute(Attribute::Bold))?;
-                }
-                if self.style_stack.contains(&Style::Dim) {
-                    queue!(self.writer, SetAttribute(Attribute::Dim))?;
-                }
-            }
-            // Re-emit Italic if an outer Italic is still on the stack
-            // (e.g. inline `*italic*` inside an italic-bearing H1 or
-            // blockquote).
-            Style::Italic => {
-                queue!(self.writer, SetAttribute(Attribute::NoItalic))?;
-                if self.style_stack.contains(&Style::Italic) {
-                    queue!(self.writer, SetAttribute(Attribute::Italic))?;
-                }
-            }
-            // NoUnderline (SGR 24) clears both single and double underline.
-            // After disabling, re-emit whichever underline variants are
-            // still on the stack so outer scopes are preserved.
-            Style::Underline => {
-                queue!(self.writer, SetAttribute(Attribute::NoUnderline))?;
-                if self.style_stack.contains(&Style::DoubleUnderline) {
-                    queue!(self.writer, SetAttribute(Attribute::DoubleUnderlined))?;
-                }
-                if self.style_stack.contains(&Style::Underline) {
-                    queue!(self.writer, SetAttribute(Attribute::Underlined))?;
-                }
-            }
-            Style::DoubleUnderline => {
-                queue!(self.writer, SetAttribute(Attribute::NoUnderline))?;
-                if self.style_stack.contains(&Style::DoubleUnderline) {
-                    queue!(self.writer, SetAttribute(Attribute::DoubleUnderlined))?;
-                }
-                if self.style_stack.contains(&Style::Underline) {
-                    queue!(self.writer, SetAttribute(Attribute::Underlined))?;
-                }
-            }
-            Style::Strikethrough => {
-                queue!(self.writer, SetAttribute(Attribute::NotCrossedOut))?;
-                if self.style_stack.contains(&Style::Strikethrough) {
-                    queue!(self.writer, SetAttribute(Attribute::CrossedOut))?;
-                }
-            }
-            // Symmetric to the Bold case above: NormalIntensity clears
-            // both Bold and Dim, so re-emit Dim and/or Bold if the outer
-            // scope still wants them.
-            Style::Dim => {
-                queue!(self.writer, SetAttribute(Attribute::NormalIntensity))?;
-                if self.style_stack.contains(&Style::Dim) {
-                    queue!(self.writer, SetAttribute(Attribute::Dim))?;
-                }
-                if self.style_stack.contains(&Style::Bold) {
-                    queue!(self.writer, SetAttribute(Attribute::Bold))?;
-                }
-            }
-            Style::ForegroundColor(_) => {
-                queue!(self.writer, SetForegroundColor(Color::Reset))?;
-                for &s in self.style_stack.iter().rev() {
-                    if let Style::ForegroundColor(c) = s {
-                        queue!(self.writer, SetForegroundColor(c))?;
-                        break;
-                    }
-                }
+    /// The style for content written now: the union of every attribute on
+    /// the stack. Underline and color have one value each, so the innermost
+    /// entry wins: a link (single underline) inside an H1 (double underline)
+    /// is single-underlined.
+    fn current_style(&self) -> TextStyle {
+        let mut style = TextStyle::default();
+        for entry in &self.style_stack {
+            match *entry {
+                Style::Bold => style.bold = true,
+                Style::Italic => style.italic = true,
+                Style::Underline => style.underline = Underline::Single,
+                Style::DoubleUnderline => style.underline = Underline::Double,
+                Style::Dim => style.dim = true,
+                Style::Strikethrough => style.strikethrough = true,
+                Style::ForegroundColor(color) => style.foreground = Some(color),
             }
         }
-        Ok(())
-    }
-
-    /// Re-emit enable escapes for every style currently on the stack. Called
-    /// after a line wrap so that formatting carries over to the new line.
-    fn reapply_styles(&mut self) -> Result<()> {
-        let styles: Vec<Style> = self.style_stack.clone();
-        for style in styles {
-            self.enable_style(style)?;
-        }
-        Ok(())
+        style
     }
 }

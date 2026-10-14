@@ -4,8 +4,9 @@
 
 //! Pure text-wrapping primitives used by the table layout pass.
 //!
-//! `write_word` in `render.rs` is an online streaming wrap that writes
-//! directly to the output and carries per-call state on the `Renderer`.
+//! `write_word` in `render.rs` is an online streaming wrap that appends
+//! to the line under construction and carries per-call state on the
+//! `Renderer`.
 //! Table cells need the opposite shape: an offline, stateless function
 //! that, given a string and a width, returns the list of wrapped lines
 //! without touching any output sink. This module provides that shape.

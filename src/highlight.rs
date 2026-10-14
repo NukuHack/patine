@@ -16,11 +16,12 @@
 use std::sync::LazyLock;
 
 use anyhow::{Context, Result};
-use crossterm::style::Color;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{FontStyle, Style as SyntectStyle, Theme};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 use two_face::theme::EmbeddedThemeName;
+
+use crate::styled::{AnsiColor, StyledLine, TextStyle};
 
 // ---------------------------------------------------------
 // Lazy singletons
@@ -39,31 +40,14 @@ static THEME: LazyLock<Theme> = LazyLock::new(|| {
 });
 
 // ---------------------------------------------------------
-// Public token representation
-// ---------------------------------------------------------
-
-/// A single highlighted token: the text slice, its foreground color
-/// (if any) decoded onto the ANSI palette, and bold/italic flags.
-///
-/// `fg == None` means "use the terminal's default foreground" — the
-/// theme explicitly wants no color for this scope.
-#[derive(Debug)]
-pub(crate) struct Token<'a> {
-    pub fg: Option<Color>,
-    pub bold: bool,
-    pub italic: bool,
-    pub text: &'a str,
-}
-
-// ---------------------------------------------------------
-// Public API
+// Crate API
 // ---------------------------------------------------------
 
 /// Resolve a fence language hint to a syntect syntax.
 ///
 /// Returns `None` when `lang` is `None`, empty, whitespace-only, or
 /// does not match any known syntax by alias, extension, or name —
-/// callers then fall back to the flat `CODE_COLOR` rendering path.
+/// callers then fall back to unhighlighted text.
 ///
 /// `find_syntax_by_token` handles the common short forms (`rs`,
 /// `py`, `js`, `sh`, …) via each grammar's registered file
@@ -79,43 +63,44 @@ pub(crate) fn syntax_for(lang: Option<&str>) -> Option<&'static SyntaxReference>
         .or_else(|| SYNTAXES.find_syntax_by_name(name))
 }
 
-/// Construct a highlighter for a single code block. Reuse across
-/// all lines of that block so that block-scoped lexer state (nested
-/// comments, multi-line strings) is preserved line-to-line.
-pub(crate) fn new_highlighter(syntax: &SyntaxReference) -> HighlightLines<'static> {
-    HighlightLines::new(syntax, &THEME)
+/// Highlight `code` line by line. Each returned line holds the tokens of
+/// one source line, styled with at most a foreground color, bold and
+/// italic.
+///
+/// One `HighlightLines` serves the whole text so that lexer state
+/// spanning lines (block comments, multi-line strings) carries over from
+/// one line to the next.
+///
+/// Fails when syntect's regex engine gives up on a line (for example on
+/// its backtracking limit); callers then show the text unhighlighted.
+pub(crate) fn highlight_code(code: &str, syntax: &SyntaxReference) -> Result<Vec<StyledLine>> {
+    let mut highlighter = HighlightLines::new(syntax, &THEME);
+    code.lines()
+        .map(|line| {
+            // `extra_newlines` grammars require each input line to
+            // terminate in `\n`; the newline is stripped back off the
+            // final token below.
+            let line_with_newline = format!("{line}\n");
+            let tokens = highlighter
+                .highlight_line(&line_with_newline, &SYNTAXES)
+                .context("highlight code line")?;
+            let mut styled = StyledLine::default();
+            for (style, text) in tokens {
+                let text = text.strip_suffix('\n').unwrap_or(text);
+                styled.push_str(text, token_style(style));
+            }
+            Ok(styled)
+        })
+        .collect()
 }
 
-/// Highlight a single line and return the resulting tokens.
-///
-/// The caller must pass the line with a trailing `\n` — that is
-/// the contract of `extra_newlines()` grammars. The terminating
-/// newline is stripped from the final token's text so downstream
-/// code can write each token unmodified without having to handle
-/// the newline specially.
-pub(crate) fn highlight_line<'a>(
-    hl: &mut HighlightLines<'_>,
-    line_with_newline: &'a str,
-) -> Result<Vec<Token<'a>>> {
-    let raw = hl
-        .highlight_line(line_with_newline, &SYNTAXES)
-        .context("highlight code line")?;
-
-    Ok(raw
-        .into_iter()
-        .map(|(style, text)| {
-            let text = text.strip_suffix('\n').unwrap_or(text);
-            Token {
-                fg: decode_ansi(style),
-                bold: style.font_style.contains(FontStyle::BOLD),
-                italic: style.font_style.contains(FontStyle::ITALIC),
-                text,
-            }
-        })
-        // Empty segments are common at line boundaries; skip them so
-        // we do not emit zero-width SGR pairs.
-        .filter(|t| !t.text.is_empty())
-        .collect())
+fn token_style(style: SyntectStyle) -> TextStyle {
+    TextStyle {
+        foreground: decode_ansi(style),
+        bold: style.font_style.contains(FontStyle::BOLD),
+        italic: style.font_style.contains(FontStyle::ITALIC),
+        ..TextStyle::default()
+    }
 }
 
 // ---------------------------------------------------------
@@ -129,12 +114,14 @@ pub(crate) fn highlight_line<'a>(
 //   - `a == 0x01` — use the terminal's default foreground.
 //   - anything else — truecolor RGB. The `Ansi` theme never emits
 //     this, so we treat it as "default" defensively.
+//
+// The `Ansi` theme only uses indices 0 to 7. An index beyond that
+// falls back to the default foreground, like truecolor does.
 
-fn decode_ansi(style: SyntectStyle) -> Option<Color> {
+fn decode_ansi(style: SyntectStyle) -> Option<AnsiColor> {
     let c = style.foreground;
     match c.a {
-        0x00 => Some(Color::AnsiValue(c.r)),
-        0x01 => None,
+        0x00 => AnsiColor::from_index(c.r),
         _ => None,
     }
 }
@@ -162,14 +149,20 @@ mod tests {
     }
 
     #[test]
-    fn ansi_indexed_decodes_to_ansi_value() {
+    fn ansi_indexed_decodes_to_palette_color() {
         for r in 0u8..=7 {
             let got = decode_ansi(style_with(r, 0x00));
-            assert!(
-                matches!(got, Some(Color::AnsiValue(n)) if n == r),
-                "palette index {r} should decode to AnsiValue({r}), got {got:?}"
+            assert_eq!(
+                got.map(AnsiColor::index),
+                Some(r),
+                "palette index {r} should decode to its palette color"
             );
         }
+    }
+
+    #[test]
+    fn indices_beyond_the_eight_color_palette_decode_to_none() {
+        assert!(decode_ansi(style_with(8, 0x00)).is_none());
     }
 
     #[test]
@@ -213,6 +206,42 @@ mod tests {
                 "expected syntax for {token:?} to resolve"
             );
         }
+    }
+
+    #[test]
+    fn highlight_code_yields_one_line_per_source_line() {
+        let rust = syntax_for(Some("rust")).expect("rust is bundled");
+        let lines = highlight_code("let x = 1;\n\nlet y = 2;\n", rust).expect("valid rust");
+        let texts: Vec<String> = lines
+            .iter()
+            .map(|line| line.spans.iter().map(|span| span.text.as_str()).collect())
+            .collect();
+        assert_eq!(texts, ["let x = 1;", "", "let y = 2;"]);
+        assert!(lines[1].spans.is_empty(), "an empty line has no spans");
+    }
+
+    #[test]
+    fn highlight_code_colors_tokens_from_the_palette() {
+        let rust = syntax_for(Some("rust")).expect("rust is bundled");
+        let lines = highlight_code("let x = 1;", rust).expect("valid rust");
+        let keyword = &lines[0].spans[0];
+        assert_eq!(keyword.text, "let");
+        assert!(keyword.style.foreground.is_some(), "{keyword:?}");
+    }
+
+    #[test]
+    fn highlight_code_carries_lexer_state_across_lines() {
+        // The second line is still inside the string literal opened on the
+        // first, so it is styled like the string, not like code.
+        let rust = syntax_for(Some("rust")).expect("rust is bundled");
+        let lines = highlight_code("let s = \"open\nstill string\";", rust).expect("valid rust");
+        let string_style = lines[0]
+            .spans
+            .iter()
+            .find(|span| span.text.contains("open"))
+            .expect("string token")
+            .style;
+        assert_eq!(lines[1].spans[0].style, string_style);
     }
 
     #[test]

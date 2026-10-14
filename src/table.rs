@@ -2,11 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::fmt::Write;
-
 use markdown::mdast::Node;
 use unicode_width::UnicodeWidthStr;
 
+use crate::styled::{StyledLine, TextStyle};
 use crate::wrap;
 
 // =========================================================
@@ -25,14 +24,14 @@ const CROSS: &str = "┼";
 const HORIZONTAL: &str = "─";
 const VERTICAL: &str = "│";
 
-// ANSI SGR sequences for header styling. The table module emits these
-// directly into the returned line strings rather than going through the
-// Renderer's style machinery — this keeps `layout_table` pure.
-//
-// NormalIntensity (SGR 22) is used instead of NoBold (SGR 21) because
-// several terminals misinterpret SGR 21 as "doubly underlined".
-const SGR_BOLD: &str = "\x1b[1m";
-const SGR_NORMAL_INTENSITY: &str = "\x1b[22m";
+const HEADER_STYLE: TextStyle = TextStyle {
+    bold: true,
+    italic: false,
+    dim: false,
+    strikethrough: false,
+    underline: crate::styled::Underline::None,
+    foreground: None,
+};
 
 /// Per-cell padding overhead on each line. Each cell contributes
 /// `"│ "` on its left and a single space of right padding (the next
@@ -79,10 +78,10 @@ fn row_texts(row: &Node) -> Vec<String> {
 // Table layout
 // =========================================================
 
-/// Lay out a GFM table as a list of pre-formatted lines. Each returned
-/// line is ready to be written verbatim by the caller *after* the
-/// caller emits its own per-line prefix (nesting indent, blockquote
-/// bars, etc.) via its normal `write_indent` machinery.
+/// Lay out a GFM table as a list of styled lines. Each returned line is
+/// ready to be appended by the caller *after* the caller emits its own
+/// per-line prefix (nesting indent, blockquote bars, etc.) via its
+/// normal `write_indent` machinery.
 ///
 /// `available_width` is the number of display columns the caller is
 /// willing to give the table (typically `Renderer::effective_width`
@@ -94,10 +93,8 @@ fn row_texts(row: &Node) -> Vec<String> {
 /// expected to tolerate this, same as the long-URL-on-its-own-line
 /// behavior.
 ///
-/// Lines may contain ANSI SGR escape sequences for styled header cells
-/// (bold) — these are embedded directly rather than routed through the
-/// `Renderer`'s style stack, since this module is intentionally pure
-/// and stateless.
+/// Header cells are bold; everything else is unstyled. The caller lays
+/// its own context style (a blockquote's dim italic) over these spans.
 ///
 /// Layout rules:
 ///   - Header row text is **centered** and **bold**, per wrapped line.
@@ -110,7 +107,7 @@ fn row_texts(row: &Node) -> Vec<String> {
 ///
 /// An empty table (no rows) yields an empty `Vec`; the caller is
 /// expected to treat that as "nothing to render".
-pub fn layout_table(table: &markdown::mdast::Table, available_width: usize) -> Vec<String> {
+pub fn layout_table(table: &markdown::mdast::Table, available_width: usize) -> Vec<StyledLine> {
     let rows: Vec<Vec<String>> = table.children.iter().map(row_texts).collect();
     if rows.is_empty() {
         return Vec::new();
@@ -179,7 +176,7 @@ pub fn layout_table(table: &markdown::mdast::Table, available_width: usize) -> V
         .collect();
 
     // ── Build the lines ─────────────────────────────────────────────────
-    let mut lines: Vec<String> = Vec::new();
+    let mut lines: Vec<StyledLine> = Vec::new();
     lines.push(border_line(&col_widths, TOP_LEFT, TOP_T, TOP_RIGHT));
 
     for (row_idx, wrapped) in wrapped_rows.iter().enumerate() {
@@ -300,14 +297,15 @@ fn row_line(
     line_idx: usize,
     col_widths: &[usize],
     is_header: bool,
-) -> String {
-    let mut line = String::new();
+) -> StyledLine {
+    let plain = TextStyle::default();
+    let mut line = StyledLine::default();
 
     for (col, &width) in col_widths.iter().enumerate() {
         // Left border of this cell (also doubles as the right border of
         // the previous cell) + one space of padding.
-        line.push_str(VERTICAL);
-        line.push(' ');
+        line.push_str(VERTICAL, plain);
+        line.push_str(" ", plain);
 
         let cell_line: &str = wrapped[col].get(line_idx).map(String::as_str).unwrap_or("");
         let cell_width = UnicodeWidthStr::width(cell_line);
@@ -320,33 +318,30 @@ fn row_line(
         if is_header {
             // Header cells are centered per wrapped line. The extra
             // column of the padding (when `padding` is odd) goes on
-            // the right. Each wrapped header line carries its own
-            // bold/normal escape pair so terminals that see only the
-            // opening SGR of a line still render correctly.
+            // the right. The centering padding is part of the bold span.
             let left_pad = padding / 2;
             let right_pad = padding - left_pad;
-            let _ = write!(
-                line,
-                "{SGR_BOLD}{:left_pad$}{cell_line}{:right_pad$}{SGR_NORMAL_INTENSITY}",
-                "", "",
+            line.push_str(
+                &format!("{:left_pad$}{cell_line}{:right_pad$}", "", ""),
+                HEADER_STYLE,
             );
         } else {
-            let _ = write!(line, "{cell_line}{:padding$}", "");
+            line.push_str(&format!("{cell_line}{:padding$}", ""), plain);
         }
 
         // Trailing space of the cell's padding.
-        line.push(' ');
+        line.push_str(" ", plain);
     }
 
     // Final right border of the row.
-    line.push_str(VERTICAL);
+    line.push_str(VERTICAL, plain);
     line
 }
 
 /// Build a horizontal border line: `left` + repeated `─` segments joined
 /// by `middle`, ending with `right`. Width of each segment is the cell
 /// column width plus two — one for each side of the cell padding.
-fn border_line(col_widths: &[usize], left: &str, middle: &str, right: &str) -> String {
+fn border_line(col_widths: &[usize], left: &str, middle: &str, right: &str) -> StyledLine {
     let mut line = String::new();
     line.push_str(left);
     for (i, &w) in col_widths.iter().enumerate() {
@@ -358,7 +353,9 @@ fn border_line(col_widths: &[usize], left: &str, middle: &str, right: &str) -> S
         }
     }
     line.push_str(right);
-    line
+    let mut styled = StyledLine::default();
+    styled.push_str(&line, TextStyle::default());
+    styled
 }
 
 // =========================================================

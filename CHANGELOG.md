@@ -13,6 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default. Library users can depend on patine with
   `default-features = false` to leave out `clap`; `cargo install patine`
   builds the binary as before.
+- A code block that syntect fails to highlight renders in the flat code
+  color instead of making `render` return an error.
+
+### Fixed
+
+- Styles no longer leak from one line into the next. A link or
+  strikethrough that wrapped inside a list item underlined or struck
+  through the indent of its continuation lines; every line now closes
+  the styles it opens, and indents are always unstyled.
+- Blockquote `│` bars are dim only. They used to pick up the quote's
+  italic, and on the wrapped lines of a heading inside a quote also its
+  bold and underline.
+- A table inside a blockquote is dim and italic throughout. Before, the
+  rest of the header row after the first header cell lost the dim.
 
 ## [1.4.0] - 2026-07-12
 

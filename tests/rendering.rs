@@ -1625,3 +1625,196 @@ const SHOWCASE_MD: &str = include_str!("fixtures/showcase.md");
 fn showcase_document_renders() {
     assert_snapshot!(render(SHOWCASE_MD));
 }
+
+// =========================================================
+// Per-character styling
+// =========================================================
+//
+// The tag snapshots show which escape sequences were written, but not
+// which style a character ends up with: a terminal keeps an attribute
+// active across newlines until something switches it off. The helpers
+// below replay the escape sequences the way a terminal does and report
+// the effective style of every visible character, so tests can assert
+// on what the reader sees.
+
+/// The SGR attributes patine emits, as a terminal tracks them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Sgr {
+    bold: bool,
+    dim: bool,
+    italic: bool,
+    /// 0 = none, 1 = single, 2 = double.
+    underline: u8,
+    strike: bool,
+    fg: Option<u8>,
+}
+
+impl Sgr {
+    fn dim() -> Self {
+        Sgr {
+            dim: true,
+            ..Sgr::default()
+        }
+    }
+}
+
+fn render_raw(markdown: &str, width: usize) -> String {
+    let mut buf: Vec<u8> = Vec::new();
+    patine::render(markdown, &mut buf, width).expect("render should not fail");
+    String::from_utf8(buf).expect("output should be valid utf-8")
+}
+
+/// One output line as a terminal shows it: every character with its
+/// effective style, and the style still active when the line ends.
+#[derive(Debug)]
+struct ScreenLine {
+    chars: Vec<(char, Sgr)>,
+    end: Sgr,
+}
+
+impl ScreenLine {
+    fn text(&self) -> String {
+        self.chars.iter().map(|&(c, _)| c).collect()
+    }
+}
+
+/// Replay `raw` like a terminal and return its lines. The style state
+/// carries over from one line to the next, as it does on screen.
+fn screen_lines(raw: &str) -> Vec<ScreenLine> {
+    let mut state = Sgr::default();
+    let mut lines = Vec::new();
+    let mut current = Vec::new();
+    let mut chars = raw.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\x1b' => {
+                assert_eq!(chars.next(), Some('['), "only CSI sequences expected");
+                let params: String = chars.by_ref().take_while(|&c| c != 'm').collect();
+                match params.as_str() {
+                    "1" => state.bold = true,
+                    "2" => state.dim = true,
+                    "3" => state.italic = true,
+                    "4" => state.underline = 1,
+                    "4:2" => state.underline = 2,
+                    "9" => state.strike = true,
+                    "22" => (state.bold, state.dim) = (false, false),
+                    "23" => state.italic = false,
+                    "24" => state.underline = 0,
+                    "29" => state.strike = false,
+                    "39" => state.fg = None,
+                    other => {
+                        let index = other
+                            .strip_prefix("38;5;")
+                            .unwrap_or_else(|| panic!("unexpected SGR {other:?}"));
+                        state.fg = Some(index.parse().expect("palette index"));
+                    }
+                }
+            }
+            '\n' => lines.push(ScreenLine {
+                chars: std::mem::take(&mut current),
+                end: state,
+            }),
+            c => current.push((c, state)),
+        }
+    }
+    lines
+}
+
+#[test]
+fn every_line_ends_in_the_default_style() {
+    // Each line closes the styles it opens, so nothing leaks into the
+    // indent of the next line or into whatever the terminal prints after
+    // patine exits.
+    let inputs = [
+        SHOWCASE_MD,
+        "> quote with **bold** and a [link](https://example.com)",
+        "- item with ~~a struck phrase that wraps over several lines~~ end",
+    ];
+    for input in inputs {
+        let raw = render_raw(input, 30);
+        for line in screen_lines(&raw) {
+            assert_eq!(
+                line.end,
+                Sgr::default(),
+                "line {:?} leaves a style active\nfull:\n{raw:?}",
+                line.text()
+            );
+        }
+    }
+}
+
+#[test]
+fn wrapped_continuation_indent_is_unstyled() {
+    // A link or strikethrough that wraps inside a list item continues on
+    // a line that starts with the continuation indent. Those spaces are
+    // layout, not content, so they carry no underline or strikethrough.
+    let inputs = [
+        "- see [a link whose text wraps over lines](https://x.io)",
+        "- see ~~a struck phrase whose text wraps over lines~~",
+        "- outer\n  - inner ~~struck words that wrap around~~",
+    ];
+    for input in inputs {
+        let raw = render_raw(input, 16);
+        for line in screen_lines(&raw).iter().skip(1) {
+            for &(c, style) in line.chars.iter().take_while(|&&(c, _)| c == ' ') {
+                assert_eq!(
+                    style,
+                    Sgr::default(),
+                    "indent {c:?} of {:?} is styled\nfull:\n{raw:?}",
+                    line.text()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn blockquote_bars_are_dim_only() {
+    // The `│` bars are dim whatever the quoted content looks like,
+    // including on the wrapped lines of a heading inside the quote.
+    let raw = render_raw(
+        "> quoted *text*\n>\n> ## A heading that wraps\n>\n> > nested",
+        16,
+    );
+    for line in screen_lines(&raw) {
+        let bars: Vec<&(char, Sgr)> = line
+            .chars
+            .iter()
+            .take_while(|&&(c, _)| c == '│' || c == ' ')
+            .collect();
+        assert!(!bars.is_empty(), "line {:?} lacks a bar", line.text());
+        for &&(c, style) in &bars {
+            assert_eq!(
+                style,
+                Sgr::dim(),
+                "bar prefix character {c:?} of {:?}\nfull:\n{raw:?}",
+                line.text()
+            );
+        }
+    }
+}
+
+#[test]
+fn table_in_blockquote_is_dim_and_italic_throughout() {
+    // A table inside a quote takes on the quote's dim italic text, on
+    // every row and on both sides of a bold header cell.
+    let raw = render_raw(
+        "> | col1 | col2 |\n> |------|------|\n> | a    | b    |",
+        80,
+    );
+    let lines = screen_lines(&raw);
+    assert_eq!(lines.len(), 5, "full:\n{raw:?}");
+    for line in &lines {
+        let (bar, table) = line.chars.split_at(2);
+        assert!(bar.iter().all(|&(_, style)| style == Sgr::dim()));
+        for &(c, style) in table {
+            assert!(
+                style.dim && style.italic,
+                "{c:?} in {:?} is not dim italic\nfull:\n{raw:?}",
+                line.text()
+            );
+            let in_header_cell = line.text().contains("col") && c.is_alphanumeric();
+            assert_eq!(style.bold, in_header_cell, "{c:?} in {:?}", line.text());
+        }
+    }
+}

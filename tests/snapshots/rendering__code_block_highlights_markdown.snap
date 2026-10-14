@@ -4,4 +4,4 @@ expression: "render(\"```markdown\\n# Heading\\n\\nSome *emphasis* and **strong*
 ---
   [fg4]#[/color] [fg4]Heading[/color]
   
-  Some [fg5][italic]*[/italic][/color][fg5][italic]emphasis[/italic][/color][fg5][italic]*[/italic][/color] and [code][bold]**[/intensity][/color][code][bold]strong[/intensity][/color][code][bold]**[/intensity][/color] text.
+  Some [italic][fg5]*emphasis*[/color][/italic] and [bold][code]**strong**[/color][/intensity] text.

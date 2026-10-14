@@ -4,6 +4,6 @@ expression: "render(\"Before.\\n\\n```\\ncode\\n```\\n\\nAfter.\")"
 ---
 Before.
 
-[code]  code
-[/color]
+  [code]code[/color]
+
 After.

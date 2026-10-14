@@ -2,5 +2,4 @@
 source: tests/rendering.rs
 expression: "render(\"> This has **bold** in a quote.\")"
 ---
-[dim][italic][dim]│ [/intensity][dim][italic]This has[bold] bold[/intensity][dim] in a quote.
-[/italic][/intensity]
+[dim]│ [/intensity][dim][italic]This has[/italic][/intensity][bold][dim][italic] bold[/italic][/intensity][dim][italic] in a quote.[/italic][/intensity]

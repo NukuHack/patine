@@ -14,18 +14,18 @@ expression: render(SHOWCASE_MD)
 
 [bold][underline]Preamble[/underline][/intensity]
 
-This manual describes standard operating procedure for[bold] Class-III multiverse
+This manual describes standard operating procedure for[bold] Class-III multiverse[/intensity]
 [bold]incursions[/intensity], as adopted by the[italic] Intergalactic Committee on Narrative Integrity[/italic]
 (ICNI). All personnel are required to read it twice, sign the waiver, and
 memorize Section 4 before their next shift.
 
-[dim][italic][dim]│ [/intensity][dim][italic]"The universe is not only stranger than we imagine, it is stranger than we can
-[dim]│ [/intensity][dim][italic][dim][italic]be reimbursed for."
-[dim]│ [/intensity][dim][italic]
-[dim]│ [/intensity][dim][italic]— Admiral Ackbar, 2387 budget hearing
-[dim]│ [/intensity][dim][italic]
-[dim][italic][dim]│ │ [/intensity][dim][italic][dim][italic]Accounting note: next time, please file form[italic][bold] W-42B[/intensity][dim][/italic][italic] in triplicate.
-[/italic][italic][/intensity][dim][/italic][/intensity]
+[dim]│ [/intensity][dim][italic]"The universe is not only stranger than we imagine, it is stranger than we can[/italic][/intensity]
+[dim]│ [/intensity][dim][italic]be reimbursed for."[/italic][/intensity]
+[dim]│ [/intensity]
+[dim]│ [/intensity][dim][italic]— Admiral Ackbar, 2387 budget hearing[/italic][/intensity]
+[dim]│ [/intensity]
+[dim]│ │ [/intensity][dim][italic]Accounting note: next time, please file form[/italic][/intensity][bold][dim][italic] W-42B[/italic][/intensity][dim][italic] in triplicate.[/italic][/intensity]
+
 ────────────────────────────────────────────────────────────────────────────────
 
 [bold][underline]Section 1 — Crossover Classification[/underline][/intensity]
@@ -44,7 +44,7 @@ epoch:
 └───────┴──────────────────────────────────────┴──────────────┘
 
 See [underline]the full classification taxonomy[/underline][dim] (https://example.invalid/icni/taxonomy)[/intensity] for
-additional detail, or browse the quick reference at [underline]
+additional detail, or browse the quick reference at 
 [underline]https://example.invalid/icni/quick-ref[/underline][dim] (https://example.invalid/icni/quick-ref)[/intensity].
 
 [bold][underline]Section 2 — Initial Response[/underline][/intensity]
@@ -60,15 +60,15 @@ Upon detecting an incursion, operatives should:
 
 [bold]Example Scan Output[/intensity]
 
-  $ multiverse-scan[fg6] --[/color][fg6]now[/color]
+  $ multiverse-scan[fg6] --now[/color]
   [ok] scanning timelines 1..2^64
   [warn] anomaly at (42, 7, 1977)
   [critical] The One Ring detected inside a replicator unit
 
 If the output looks garbled, try the unflagged variant:
 
-[code]  multiverse-scan
-[/color]
+  [code]multiverse-scan[/color]
+
 Operators with code access prefer the Python wrapper, which returns structured
 anomalies and mirrors the CLI flags:
 
@@ -76,7 +76,7 @@ anomalies and mirrors the CLI flags:
   
   scan [fg5]=[/color] scanner.scan([fg6]now[/color][fg5]=[/color][code]True[/color], [fg6]depth[/color][fg5]=[/color][code]64[/color])
   [fg5]for[/color] anomaly [fg5]in[/color] scan.anomalies:
-      [fg6]print[/color]([fg5]f[/color][fg2]"[/color][fg2][[/color]{anomaly.severity}[fg2]] [/color]{anomaly.description}[fg2]"[/color])
+      [fg6]print[/color]([fg5]f[/color][fg2]"[[/color]{anomaly.severity}[fg2]] [/color]{anomaly.description}[fg2]"[/color])
 
 [bold][underline]Section 3 — Field Kit[/underline][/intensity]
 
@@ -103,7 +103,7 @@ parsing capability can still honor a request:
       - [fg2]phaser[/color]
     [fg1]morale[/color]:
       [fg1]chocolate_frog[/color]: [code]1[/color]
-      [fg1]notebook[/color]: [fg2]"[/color][fg2]Don't Panic[/color][fg2]"[/color]
+      [fg1]notebook[/color]: [fg2]"Don't Panic"[/color]
 
 [bold]Escalation Chain[/intensity]
 

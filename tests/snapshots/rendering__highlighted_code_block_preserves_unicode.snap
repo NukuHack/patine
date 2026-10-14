@@ -2,4 +2,4 @@
 source: tests/rendering.rs
 expression: "render(\"```rust\\nlet s = \\\"héllo 🎉\\\";\\n```\")"
 ---
-  [fg5]let[/color] s [fg5]=[/color] [fg2]"[/color][fg2]héllo 🎉[/color][fg2]"[/color];
+  [fg5]let[/color] s [fg5]=[/color] [fg2]"héllo 🎉"[/color];
