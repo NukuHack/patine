@@ -1451,6 +1451,51 @@ fn hard_break_two_trailing_spaces() {
     );
 }
 
+#[test]
+fn hard_break_in_list_item_lines_up_with_item_text() {
+    // The line after a hard break continues the item's text, so it
+    // starts under that text like a wrapped line does, not under the
+    // bullet.
+    assert_eq!(
+        plain_lines("- item\\\nmore\n- next", 80),
+        ["• item", "  more", "• next"]
+    );
+    assert_eq!(
+        plain_lines("10. item  \nmore", 80),
+        ["10. item", "    more"]
+    );
+}
+
+#[test]
+fn hard_break_in_nested_list_item_lines_up_with_item_text() {
+    assert_eq!(
+        plain_lines("- outer\n  - inner\\\n    more", 80),
+        ["• outer", "  • inner", "    more"]
+    );
+}
+
+#[test]
+fn hard_break_in_list_item_inside_blockquote_keeps_the_bar() {
+    assert_eq!(
+        plain_lines("> - item\\\n>   more", 80),
+        ["│ • item", "│   more"]
+    );
+}
+
+#[test]
+fn hard_break_after_a_space_adds_no_space_to_the_next_line() {
+    // `item \` leaves a trailing space in the text before the break. The
+    // space must not reappear after the continuation indent.
+    assert_eq!(plain_lines("- item \\\nmore", 80), ["• item", "  more"]);
+}
+
+#[test]
+fn hard_break_in_list_item_snapshot() {
+    // The continuation indent is unstyled layout; the bold text on both
+    // sides of the break keeps its style.
+    assert_snapshot!(render("- **bold\\\nmore** plain\n  - nested\\\n    line"));
+}
+
 // =========================================================
 // Edge case: multi-paragraph list items
 // =========================================================

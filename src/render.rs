@@ -157,12 +157,7 @@ impl Renderer {
             Node::Text(t) => self.render_text(&t.value),
             Node::Strong(s) => self.render_strong(&s.children),
             Node::Emphasis(e) => self.render_emphasis(&e.children),
-            // Hard break (trailing backslash or two spaces): emit a
-            // newline within the current block.
-            Node::Break(_) => {
-                self.write_newline();
-                self.write_indent();
-            }
+            Node::Break(_) => self.write_hard_break(),
             Node::InlineCode(c) => self.render_inline_code(&c.value),
             Node::List(l) => self.render_list(l),
             Node::Blockquote(bq) => self.render_blockquote(&bq.children),
@@ -604,6 +599,18 @@ impl Renderer {
         if self.continuation_indent > 0 {
             self.write_continuation_indent();
         }
+    }
+
+    /// End the line inside a block (a trailing backslash or two spaces in
+    /// the source). The text after it continues the same block, so its
+    /// line starts where a wrapped line would: under the text of a list
+    /// item, not under its bullet.
+    fn write_hard_break(&mut self) {
+        self.wrap_line();
+        // Whitespace before the break separates nothing on the new line.
+        // Past a continuation indent the column is not 0, so `write_word`
+        // would draw it.
+        self.pending_space = None;
     }
 
     // =========================================================

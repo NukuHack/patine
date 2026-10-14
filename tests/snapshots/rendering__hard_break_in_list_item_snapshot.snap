@@ -1,0 +1,8 @@
+---
+source: tests/rendering.rs
+expression: "render(\"- **bold\\\\\\nmore** plain\\n  - nested\\\\\\n    line\")"
+---
+• [bold]bold[]
+  [bold]more[] plain
+  • nested
+    line

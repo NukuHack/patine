@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- The line after a hard break (a trailing backslash or two spaces) in a
+  list item starts under the item's text, like a wrapped line. It used to
+  start under the bullet, at the item's nesting indent.
+
 ## [1.5.0] - 2026-10-14
 
 ### Added
