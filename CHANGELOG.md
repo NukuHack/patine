@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `render_lines(input, width)` returns the rendered document as
+  `StyledLine`s instead of escape sequences: lines of `StyledSpan`s,
+  each with a complete `TextStyle` (bold, italic, dim, strikethrough,
+  `Underline` and an optional `AnsiColor` from the 8-color palette).
+  Applications that draw their own interface, such as ratatui
+  applications, map these onto their own types and render Markdown
+  exactly like patine. `render` writes the same lines as ANSI escape
+  sequences.
+- `highlight(code, language)` syntax-highlights source code outside
+  Markdown into `StyledLine`s with the same theme as code blocks. Without
+  a known language it returns the lines unstyled.
+
 ### Changed
 
 - The command-line interface sits behind a new `cli` feature, enabled by

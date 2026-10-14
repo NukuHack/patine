@@ -7,6 +7,8 @@ description = "Render Markdown beautifully in the terminal"
 authors = ["Jakob Westhoff <jakob@westhoffswelt.de>"]
 homepage = "https://westhoffswelt.de"
 repository = "https://github.com/jakobwesthoff/patine"
+keywords = ["markdown", "terminal", "ansi", "renderer", "syntax-highlighting"]
+categories = ["command-line-utilities", "text-processing"]
 
 [features]
 default = ["cli"]

@@ -4,31 +4,54 @@
 
 //! The style-neutral output model: lines of text spans, each carrying the
 //! complete style it is drawn with. The renderer builds these lines; the
-//! ANSI writer in `ansi.rs` turns them into escape sequences. Design
-//! rationale lives in `docs/adr/0006-render-to-style-neutral-lines.md`.
+//! ANSI writer in `ansi.rs` turns them into escape sequences, and other
+//! front ends (a ratatui application) map them onto their own types.
+//! Design rationale lives in
+//! `docs/adr/0006-render-to-style-neutral-lines.md`.
+
+use std::fmt;
+
+use unicode_width::UnicodeWidthStr;
 
 // =========================================================
 // Colors and underline
 // =========================================================
 
-/// A color from the 8-color ANSI palette.
+/// A color from the 8-color ANSI palette, named after its standard SGR
+/// meaning.
 ///
 /// patine never emits absolute RGB colors: each color is a palette slot
-/// that the user's terminal theme resolves (see ADR 0005).
+/// that the user's terminal theme resolves. A front end keeps that
+/// property by drawing the slot rather than a fixed RGB value, for
+/// example with ratatui's `Color::Indexed(color.index())`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum AnsiColor {
+    /// Palette index 0.
     Black,
+    /// Palette index 1.
     Red,
+    /// Palette index 2.
     Green,
+    /// Palette index 3, used for inline code and unhighlighted code blocks.
     Yellow,
+    /// Palette index 4.
     Blue,
+    /// Palette index 5.
     Magenta,
+    /// Palette index 6.
     Cyan,
+    /// Palette index 7, which ratatui calls `Color::Gray`.
     White,
 }
 
 impl AnsiColor {
     /// The palette index of this color, from 0 (`Black`) to 7 (`White`).
+    ///
+    /// ```
+    /// use patine::AnsiColor;
+    ///
+    /// assert_eq!(AnsiColor::Yellow.index(), 3);
+    /// ```
     pub const fn index(self) -> u8 {
         self as u8
     }
@@ -49,14 +72,24 @@ impl AnsiColor {
     }
 }
 
+impl From<AnsiColor> for u8 {
+    /// The palette index, as returned by [`AnsiColor::index`].
+    fn from(color: AnsiColor) -> u8 {
+        color.index()
+    }
+}
+
 /// How text is underlined.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Underline {
+    /// Not underlined.
     #[default]
     None,
+    /// A single underline, used for links and level-two headings.
     Single,
-    /// Used for level-one headings. Terminals without double underline
-    /// support draw a single one instead.
+    /// A double underline, used for level-one headings. Terminals without
+    /// double underline support draw a single one instead, so a level-one
+    /// heading is also italic to stay distinct from a level-two one.
     Double,
 }
 
@@ -64,17 +97,34 @@ pub enum Underline {
 // Text style
 // =========================================================
 
-/// The complete style of a piece of text. The default is the terminal's
-/// plain text: no attributes and the default foreground color.
+/// The complete style of a piece of text.
+///
+/// The default is the terminal's plain text: no attributes and the
+/// default foreground color. New attributes may be added in minor
+/// releases, so outside patine a style is built from the default:
+///
+/// ```
+/// use patine::{AnsiColor, TextStyle};
+///
+/// let mut keyword = TextStyle::default();
+/// keyword.bold = true;
+/// keyword.foreground = Some(AnsiColor::Magenta);
+/// ```
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct TextStyle {
+    /// Bold, or increased intensity.
     pub bold: bool,
+    /// Italic.
     pub italic: bool,
+    /// Dim, or decreased intensity. Can be combined with `bold`.
     pub dim: bool,
+    /// Crossed out.
     pub strikethrough: bool,
+    /// Underline kind, [`Underline::None`] for none.
     pub underline: Underline,
-    /// `None` keeps the terminal's default foreground color.
+    /// Foreground color; `None` keeps the terminal's default foreground.
+    /// patine never sets a background color.
     pub foreground: Option<AnsiColor>,
 }
 
@@ -103,22 +153,63 @@ impl TextStyle {
 // =========================================================
 
 /// A run of text drawn in one style.
+///
+/// The text never contains a newline. It may contain tab characters from
+/// code blocks, which patine passes through verbatim.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct StyledSpan {
+    /// The text of the span.
     pub text: String,
+    /// The style the whole text is drawn in.
     pub style: TextStyle,
 }
 
+impl StyledSpan {
+    /// A span of `text` drawn in `style`.
+    pub fn new(text: impl Into<String>, style: TextStyle) -> Self {
+        Self {
+            text: text.into(),
+            style,
+        }
+    }
+
+    /// Display width of the text in terminal columns.
+    pub fn width(&self) -> usize {
+        UnicodeWidthStr::width(self.text.as_str())
+    }
+}
+
+impl fmt::Display for StyledSpan {
+    /// Writes the plain text, without any styling.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.text)
+    }
+}
+
 /// One output line: its spans in reading order, without a trailing
-/// newline. An empty line has no spans.
+/// newline. A blank line has no spans.
+///
+/// Lines that patine produces never hold two adjacent spans of the same
+/// style.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct StyledLine {
+    /// The spans of the line, in reading order.
     pub spans: Vec<StyledSpan>,
 }
 
 impl StyledLine {
+    /// A line made of `spans`, kept exactly as given.
+    pub fn new(spans: Vec<StyledSpan>) -> Self {
+        Self { spans }
+    }
+
+    /// Display width of the line in terminal columns.
+    pub fn width(&self) -> usize {
+        self.spans.iter().map(StyledSpan::width).sum()
+    }
+
     /// Append `text` in `style`. Text that continues the style of the last
     /// span extends that span, so a line holds one span per style change
     /// rather than one per word.
@@ -128,11 +219,47 @@ impl StyledLine {
         }
         match self.spans.last_mut() {
             Some(last) if last.style == style => last.text.push_str(text),
-            _ => self.spans.push(StyledSpan {
-                text: text.to_string(),
-                style,
-            }),
+            _ => self.spans.push(StyledSpan::new(text, style)),
         }
+    }
+}
+
+impl fmt::Display for StyledLine {
+    /// Writes the plain text of all spans, without any styling.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.spans
+            .iter()
+            .try_for_each(|span| f.write_str(&span.text))
+    }
+}
+
+impl From<Vec<StyledSpan>> for StyledLine {
+    fn from(spans: Vec<StyledSpan>) -> Self {
+        Self::new(spans)
+    }
+}
+
+impl FromIterator<StyledSpan> for StyledLine {
+    fn from_iter<I: IntoIterator<Item = StyledSpan>>(spans: I) -> Self {
+        Self::new(spans.into_iter().collect())
+    }
+}
+
+impl IntoIterator for StyledLine {
+    type Item = StyledSpan;
+    type IntoIter = std::vec::IntoIter<StyledSpan>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.spans.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a StyledLine {
+    type Item = &'a StyledSpan;
+    type IntoIter = std::slice::Iter<'a, StyledSpan>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.spans.iter()
     }
 }
 
