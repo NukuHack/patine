@@ -24,6 +24,9 @@ use unicode_width::UnicodeWidthStr;
 /// that the user's terminal theme resolves. A front end keeps that
 /// property by drawing the slot rather than a fixed RGB value, for
 /// example with ratatui's `Color::Indexed(color.index())`.
+///
+/// The enum is exhaustive, so a front end can match on every color. A new
+/// variant is a breaking change and only comes in a major release.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum AnsiColor {
     /// Palette index 0.
@@ -80,6 +83,9 @@ impl From<AnsiColor> for u8 {
 }
 
 /// How text is underlined.
+///
+/// The enum is exhaustive, so a front end can match on every kind. A new
+/// variant is a breaking change and only comes in a major release.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Underline {
     /// Not underlined.
@@ -100,8 +106,8 @@ pub enum Underline {
 /// The complete style of a piece of text.
 ///
 /// The default is the terminal's plain text: no attributes and the
-/// default foreground color. New attributes may be added in minor
-/// releases, so outside patine a style is built from the default:
+/// default foreground color. New fields may be added in minor releases,
+/// so outside patine a style is built from the default:
 ///
 /// ```
 /// use patine::{AnsiColor, TextStyle};
@@ -110,6 +116,10 @@ pub enum Underline {
 /// keyword.bold = true;
 /// keyword.foreground = Some(AnsiColor::Magenta);
 /// ```
+///
+/// The values the existing fields can take change only in a major
+/// release: a new variant of [`Underline`] or [`AnsiColor`] is a breaking
+/// change.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct TextStyle {
