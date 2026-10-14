@@ -1353,6 +1353,47 @@ fn blocks_nested_in_an_item_wrap_under_their_own_text() {
     );
 }
 
+#[test]
+fn block_first_in_an_item_starts_right_under_the_bullet() {
+    // A line that holds only the bullet or number ends there, and the
+    // block starts on the next line, one nesting indent in, with no blank
+    // line between them.
+    assert_eq!(plain_lines("- > quote", 80), ["• ", "  │ quote"]);
+    assert_eq!(plain_lines("10. > quote", 80), ["10. ", "  │ quote"]);
+    assert_eq!(plain_lines("- ```\n  code\n  ```", 80), ["• ", "    code"]);
+    assert_eq!(
+        plain_lines("10. ```\n    code\n    ```", 80),
+        ["10. ", "    code"]
+    );
+    assert_eq!(plain_lines("- # Heading", 80), ["• ", "  Heading"]);
+    assert_eq!(plain_lines("10. # Heading", 80), ["10. ", "  Heading"]);
+    assert_eq!(plain_lines("> - > quote", 80), ["│ • ", "  │ │ quote"]);
+}
+
+#[test]
+fn nested_list_first_in_an_item_starts_right_under_the_bullet() {
+    assert_eq!(plain_lines("- - nested", 80), ["• ", "  • nested"]);
+    assert_eq!(plain_lines("10. - nested", 80), ["10. ", "  • nested"]);
+}
+
+#[test]
+fn block_after_other_content_in_an_item_keeps_its_blank_line() {
+    // Only the bullet's own line lets a block start without a blank line.
+    // After a nested list the line is closed, and the block is spaced as
+    // usual.
+    assert_eq!(
+        plain_lines("- - nested\n\n  > quote", 80),
+        ["• ", "  • nested", "", "  │ quote"]
+    );
+}
+
+#[test]
+fn empty_block_first_in_an_item_keeps_spacing_after_the_list() {
+    // A block that draws nothing still leaves the bullet as output above
+    // the next block, which then gets its blank line.
+    assert_eq!(plain_lines("- >\n\npara", 80), ["• ", "", "para"]);
+}
+
 // =========================================================
 // Regression: blockquote must not emit bare styles before first bar
 // =========================================================

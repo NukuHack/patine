@@ -99,8 +99,11 @@ pub struct Renderer {
     /// output. Used to avoid emitting duplicate blank lines.
     consecutive_newlines: usize,
 
-    /// True until the first visible content is written. Prevents a leading
-    /// blank line at the top of the output.
+    /// True until the first visible content is written, which keeps a
+    /// block at the top of the output from starting with a blank line.
+    /// Also true on the line under a list item's bullet or number when a
+    /// block starts there, so that the block follows the bullet without a
+    /// blank line.
     at_start: bool,
 
     /// The word under construction, not yet placed on a line. markdown-rs
@@ -444,13 +447,29 @@ impl Renderer {
                 // lines start under their own text, so the item's
                 // continuation indent is off while they render. A nested
                 // list sets one for its own items.
+                //
+                // A block can't share the bullet's line, as its lines sit
+                // at the nesting indent and not past the bullet. When the
+                // line holds only the bullet, the block starts on the next
+                // line without a blank line in between, so the bullet stays
+                // attached to it: `at_start` makes the block's spacing
+                // stand down, as at the top of the output.
                 other => {
+                    let bare_prefix =
+                        self.consecutive_newlines == 0 && self.column == self.text_start;
                     self.ensure_line_break();
+                    if bare_prefix {
+                        self.at_start = true;
+                    }
                     self.extra_indent += 1;
                     self.continuation_indent = 0;
                     self.render_node(other);
                     self.continuation_indent = prefix_width;
                     self.extra_indent -= 1;
+                    // A block that draws nothing leaves `at_start` set,
+                    // but the bullet above is output that the next block
+                    // needs its blank line from.
+                    self.at_start = false;
                 }
             }
             is_first = false;

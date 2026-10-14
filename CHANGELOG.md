@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- A list item that starts with a block quote, code block or heading
+  shows the block on the line under the bullet or number. A blank line
+  used to separate them, as if the bullet stood alone. A nested list
+  starting an item already rendered this way.
+
 ## [1.6.2] - 2026-10-14
 
 ### Changed
