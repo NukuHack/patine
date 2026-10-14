@@ -443,10 +443,16 @@ impl Renderer {
                 }
                 // Nested lists and other block content get their own indent.
                 // Ensure we're on a new line before starting nested content.
+                // The nesting indent is all of their prefix: their wrapped
+                // lines start under their own text, so the item's
+                // continuation indent is off while they render. A nested
+                // list sets one for its own items.
                 other => {
                     self.ensure_line_break();
                     self.extra_indent += 1;
+                    self.continuation_indent = 0;
                     self.render_node(other);
+                    self.continuation_indent = prefix_width;
                     self.extra_indent -= 1;
                 }
             }

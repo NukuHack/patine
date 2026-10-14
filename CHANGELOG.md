@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A list item whose first word is wider than the room after the bullet
   keeps that word next to the bullet, where it overflows like any word
   wider than the line. It used to leave the bullet alone on its line.
+- A blockquote or heading inside a list item wraps under its own text.
+  Its wrapped lines used to start as far right again as the item's bullet
+  or number is wide.
 
 ## [1.6.1] - 2026-10-14
 

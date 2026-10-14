@@ -1268,6 +1268,25 @@ fn word_wider_than_the_room_after_the_bullet_stays_with_it() {
     assert_eq!(plain_lines("- x abcdefghij", 8), ["• x", "  abcdefghij"]);
 }
 
+#[test]
+fn blocks_nested_in_an_item_wrap_under_their_own_text() {
+    // A quote or heading inside a list item sits one nesting indent in.
+    // Its wrapped lines start where its first line does, not past the
+    // item's bullet a second time.
+    assert_eq!(
+        plain_lines("- item\n\n  > aaaa bbbb cccc dddd", 18),
+        ["• item", "", "  │ aaaa bbbb cccc", "  │ dddd"]
+    );
+    assert_eq!(
+        plain_lines("10. item\n\n    > aaaa bbbb cccc dddd", 18),
+        ["10. item", "", "  │ aaaa bbbb cccc", "  │ dddd"]
+    );
+    assert_eq!(
+        plain_lines("- item\n\n  ### aaaa bbbb cccc dddd", 16),
+        ["• item", "", "  aaaa bbbb cccc", "  dddd"]
+    );
+}
+
 // =========================================================
 // Regression: blockquote must not emit bare styles before first bar
 // =========================================================
