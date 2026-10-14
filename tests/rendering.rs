@@ -1150,6 +1150,125 @@ fn ordered_list_item_wrap_indentation() {
 }
 
 // =========================================================
+// List items use the full width
+// =========================================================
+
+// The bullet or number and the continuation indent are part of the line,
+// so a list item's text fills the line up to the width, on its first line
+// as on its wrapped ones. Each test picks the width at which three words
+// fit exactly, and one column less, at which the third word wraps.
+
+const FOUR_WORDS: &str = "aaaa bbbb cccc dddd eeee ffff gggg";
+
+#[test]
+fn bullet_item_fills_the_line_exactly() {
+    let markdown = format!("- {FOUR_WORDS}");
+    assert_eq!(
+        plain_lines(&markdown, 16),
+        ["• aaaa bbbb cccc", "  dddd eeee ffff", "  gggg"]
+    );
+    assert_eq!(
+        plain_lines(&markdown, 15),
+        ["• aaaa bbbb", "  cccc dddd", "  eeee ffff", "  gggg"]
+    );
+}
+
+#[test]
+fn numbered_items_fill_the_line_exactly() {
+    assert_eq!(
+        plain_lines(&format!("1. {FOUR_WORDS}"), 17),
+        ["1. aaaa bbbb cccc", "   dddd eeee ffff", "   gggg"]
+    );
+    assert_eq!(
+        plain_lines(&format!("10. {FOUR_WORDS}"), 18),
+        ["10. aaaa bbbb cccc", "    dddd eeee ffff", "    gggg"]
+    );
+    assert_eq!(
+        plain_lines(&format!("10. {FOUR_WORDS}"), 17),
+        [
+            "10. aaaa bbbb",
+            "    cccc dddd",
+            "    eeee ffff",
+            "    gggg"
+        ]
+    );
+}
+
+#[test]
+fn nested_item_fills_the_line_exactly() {
+    assert_eq!(
+        plain_lines(&format!("- x\n  - {FOUR_WORDS}"), 18),
+        [
+            "• x",
+            "  • aaaa bbbb cccc",
+            "    dddd eeee ffff",
+            "    gggg"
+        ]
+    );
+}
+
+#[test]
+fn item_in_a_quote_fills_the_line_exactly() {
+    assert_eq!(
+        plain_lines(&format!("> - {FOUR_WORDS}"), 18),
+        ["│ • aaaa bbbb cccc", "│   dddd eeee ffff", "│   gggg"]
+    );
+}
+
+#[test]
+fn lines_after_breaks_in_an_item_fill_the_line_exactly() {
+    let expected = ["• aaaa bbbb cccc", "  dddd eeee ffff", "  gggg"];
+    assert_eq!(
+        plain_lines("- aaaa bbbb cccc\\\ndddd eeee ffff gggg", 16),
+        expected
+    );
+    assert_eq!(
+        plain_lines_with("- aaaa bbbb cccc\ndddd eeee ffff gggg", 16, BREAK),
+        expected
+    );
+}
+
+#[test]
+fn second_paragraph_of_an_item_fills_the_line_exactly() {
+    assert_eq!(
+        plain_lines(&format!("- x\n\n  {FOUR_WORDS}"), 16),
+        ["• x", "", "  aaaa bbbb cccc", "  dddd eeee ffff", "  gggg"]
+    );
+}
+
+#[test]
+fn thematic_break_in_an_item_reaches_the_width() {
+    // Blocks nested in an item sit one nesting indent in, and the rule
+    // spans the rest of the line.
+    let lines = plain_lines("- x\n\n  ***", 20);
+    assert_eq!(lines[2], format!("  {}", "─".repeat(18)));
+}
+
+#[test]
+fn table_in_an_item_reaches_the_width() {
+    // The cell text is too long for one line, so the table takes all the
+    // width it gets.
+    let lines = plain_lines("- x\n\n  | aaaa bbbb cccc dddd eeee |\n  |---|", 20);
+    let widths: Vec<usize> = lines[2..].iter().map(|line| line.chars().count()).collect();
+    assert!(widths.iter().all(|&width| width == 20), "{lines:#?}");
+}
+
+#[test]
+fn word_wider_than_the_room_after_the_bullet_stays_with_it() {
+    // A line that holds only the bullet or the continuation indent is
+    // empty for wrapping: a word too wide for it overflows there instead
+    // of leaving the bullet alone on its line.
+    assert_eq!(plain_lines("- abcdefghij", 8), ["• abcdefghij"]);
+    assert_eq!(plain_lines("10. abcdefghij", 8), ["10. abcdefghij"]);
+    assert_eq!(plain_lines("> - abcdefghij", 6), ["│ • abcdefghij"]);
+    assert_eq!(
+        plain_lines("- x\n\n  abcdefghij", 8),
+        ["• x", "", "  abcdefghij"]
+    );
+    assert_eq!(plain_lines("- x abcdefghij", 8), ["• x", "  abcdefghij"]);
+}
+
+// =========================================================
 // Regression: blockquote must not emit bare styles before first bar
 // =========================================================
 

@@ -53,9 +53,8 @@ Upon detecting an incursion, operatives should:
 
 1. Confirm the breach using the [fg3]multiverse-scan --now[/color] command.
 2. Assess threat level per Section 1.
-3. Notify your local liaison. [bold]Do not[/intensity] attempt to resolve Alpha-class
-   incursions personally — they typically resolve themselves once coffee is
-   offered.
+3. Notify your local liaison. [bold]Do not[/intensity] attempt to resolve Alpha-class incursions
+   personally — they typically resolve themselves once coffee is offered.
 4. File an incident report, even if the incident was "just a cat".
 
 [bold]Example Scan Output[/intensity]

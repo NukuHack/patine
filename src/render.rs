@@ -78,12 +78,21 @@ pub struct Renderer {
 
     /// Current column position within the content area, 0-based. Tracks
     /// content position *after* the indent prefix (nesting indent +
-    /// blockquote bars). Wrapping decisions compare `column` against
-    /// [`effective_width()`](Self::effective_width), both of which exclude
-    /// indent width — this is why setting `column` to a line's display
-    /// width (e.g. in `render_code_block`) is correct despite the indent
-    /// having just been written.
+    /// blockquote bars), so a list item's bullet or number and its
+    /// continuation indent count. Wrapping decisions compare `column`
+    /// against [`effective_width()`](Self::effective_width), both of which
+    /// exclude indent width. This is why setting `column` to a line's
+    /// display width (e.g. in `render_code_block`) is correct despite the
+    /// indent having just been written.
     column: usize,
+
+    /// The column where the text of the current line starts: past a list
+    /// item's bullet or number on its first line, past the continuation
+    /// indent on its later lines, 0 everywhere else. A line whose
+    /// `column` is still here holds only its prefix and is empty for
+    /// wrapping: the next word goes on it whatever its width, without a
+    /// space in front.
+    text_start: usize,
 
     /// Number of consecutive newlines written since the last non-newline
     /// output. Used to avoid emitting duplicate blank lines.
@@ -144,6 +153,7 @@ impl Renderer {
             line: StyledLine::default(),
             content_width,
             column: 0,
+            text_start: 0,
             consecutive_newlines: 0,
             at_start: true,
             word: StyledLine::default(),
@@ -392,6 +402,7 @@ impl Renderer {
         self.emit(&prefix);
         let prefix_width = UnicodeWidthStr::width(prefix.as_str());
         self.column += prefix_width;
+        self.text_start = self.column;
         self.consecutive_newlines = 0;
         self.at_start = false;
 
@@ -648,8 +659,9 @@ impl Renderer {
         let word = std::mem::take(&mut self.word);
         let width = word.width();
 
+        let line_has_text = self.column > self.text_start;
         if let Some(space_style) = self.pending_space
-            && self.column > 0
+            && line_has_text
         {
             if self.column + 1 + width > self.effective_width() {
                 self.wrap_line();
@@ -657,7 +669,7 @@ impl Renderer {
                 self.line.push_str(" ", space_style);
                 self.column += 1;
             }
-        } else if self.column > 0 && self.column + width > self.effective_width() {
+        } else if line_has_text && self.column + width > self.effective_width() {
             // No space requested but the word still doesn't fit.
             self.wrap_line();
         }
@@ -689,24 +701,21 @@ impl Renderer {
     fn write_hard_break(&mut self) {
         self.flush_word();
         self.wrap_line();
-        // Whitespace before the break separates nothing on the new line.
-        // Past a continuation indent the column is not 0, so `flush_word`
-        // would draw it.
-        self.pending_space = None;
     }
 
     // =========================================================
     // Low-level output helpers
     // =========================================================
 
-    /// Content width available for text, accounting for global indent and any
-    /// extra nesting indent. Always returns at least 1 to prevent degenerate
-    /// behavior (e.g. invisible thematic breaks, every word on its own line).
+    /// Content width available after the line prefix (nesting indent and
+    /// blockquote bars). A list item's bullet and continuation indent are
+    /// not subtracted, since `column` already counts them. Always returns
+    /// at least 1 to prevent degenerate behavior (e.g. invisible thematic
+    /// breaks, every word on its own line).
     fn effective_width(&self) -> usize {
         self.content_width
             .saturating_sub(self.extra_indent * NEST_INDENT_WIDTH)
             .saturating_sub(self.blockquote_depth * 2)
-            .saturating_sub(self.continuation_indent)
             .max(1)
     }
 
@@ -720,6 +729,7 @@ impl Renderer {
     fn write_newline(&mut self) {
         self.lines.push(std::mem::take(&mut self.line));
         self.column = 0;
+        self.text_start = 0;
         self.consecutive_newlines += 1;
     }
 
@@ -750,6 +760,7 @@ impl Renderer {
         self.line
             .push_str(&" ".repeat(self.continuation_indent), TextStyle::default());
         self.column += self.continuation_indent;
+        self.text_start = self.column;
     }
 
     /// Insert blank-line separation before a block element. Writes newlines

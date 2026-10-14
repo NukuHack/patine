@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- List items wrap at the full width. The bullet or number was counted
+  twice, so an item's lines broke as many columns early as the bullet or
+  number is wide: at width 20, `1. aaa bbb ccc ddd` broke before `ddd`.
+  A table or thematic break inside a list item was that much narrower
+  too. Items that wrap render differently from 1.6.1.
+- A list item whose first word is wider than the room after the bullet
+  keeps that word next to the bullet, where it overflows like any word
+  wider than the line. It used to leave the bullet alone on its line.
+
 ## [1.6.1] - 2026-10-14
 
 ### Fixed
