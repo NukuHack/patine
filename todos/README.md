@@ -92,8 +92,8 @@ those citations change with it (`rg -i <ulid>` finds them).
 
 ## Milestones
 
-- `milestone/v1-5`: release 1.5.0, the style-neutral line renderer that
-  asqr shares
+No milestone is open. Add one here as `milestone/<name>` (no dots, for
+example `milestone/v1-6`) before tagging a todo with it.
 
 ## Related repositories
 
