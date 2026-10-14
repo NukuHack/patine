@@ -6,6 +6,8 @@ Date: 2026-04-09
 
 Accepted
 
+Amended by [6. Render to style-neutral lines](0006-render-to-style-neutral-lines.md)
+
 ## Context
 
 The renderer needs to walk the markdown AST (produced by markdown-rs) and

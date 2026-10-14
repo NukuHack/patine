@@ -67,6 +67,26 @@ Options:
 
 When no file is given and stdin is a terminal, patine prints its help message.
 
+## Library
+
+patine is also a Rust library. `patine::render` writes a document with ANSI escape sequences, exactly as the binary prints it. `patine::render_lines` returns the same document as lines of styled spans, for applications that draw their own interface, such as a ratatui application; each span carries its complete style (bold, italic, dim, strikethrough, underline, and one of the 8 ANSI palette colors). `patine::highlight` does the same for source code outside Markdown.
+
+The binary and its dependencies (`clap`, `crossterm`) sit behind the default `cli` feature. Leave it out when you only need the library:
+
+```toml
+[dependencies]
+patine = { version = "1.5", default-features = false }
+```
+
+```rust
+let lines = patine::render_lines("# Title\n\nSome *emphasis*.", 80);
+for line in &lines {
+    for span in line {
+        // Map span.style onto your own style type and draw span.text.
+    }
+}
+```
+
 ## Why "patine"?
 
 Shakespeare used *patine* to describe golden discs inlaid into the floor of heaven — raw material transformed into something luminous. The word carries the same idea as *patina*: a surface that becomes more beautiful through transformation.
