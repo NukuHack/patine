@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default. Library users can depend on patine with
   `default-features = false` to leave out `clap`; `cargo install patine`
   builds the binary as before.
+- The library writes its escape sequences itself and no longer depends
+  on `crossterm`, which only the `cli` feature pulls in now.
 - A code block that syntect fails to highlight renders in the flat code
   color instead of making `render` return an error.
 
