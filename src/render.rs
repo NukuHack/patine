@@ -268,13 +268,9 @@ impl Renderer {
         // highlighted and fallback modes.
         self.extra_indent += 1;
 
-        // A highlighting failure is a limit of syntect's regex engine on
-        // this particular text, not a problem of the document. The block
-        // then renders like one without a language rather than failing
-        // the whole render.
-        let highlighted = crate::highlight::syntax_for(lang)
-            .and_then(|syntax| crate::highlight::highlight_code(value, syntax).ok());
-        match highlighted {
+        // A block that syntect fails to highlight renders like one without
+        // a language rather than failing the whole render.
+        match crate::highlight::try_highlight(value, lang) {
             Some(lines) => self.render_code_block_highlighted(&lines),
             None => self.render_code_block_plain(value),
         }

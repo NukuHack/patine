@@ -207,17 +207,13 @@ pub fn render_lines_with(input: &str, width: usize, options: &RenderOptions) -> 
 /// assert_eq!(plain[0].spans[0].style, patine::TextStyle::default());
 /// ```
 pub fn highlight(code: &str, language: Option<&str>) -> Vec<StyledLine> {
-    // A highlighting failure is a limit of syntect's regex engine on this
-    // particular text; the code is still worth showing.
-    highlight::syntax_for(language)
-        .and_then(|syntax| highlight::highlight_code(code, syntax).ok())
-        .unwrap_or_else(|| {
-            line_endings::verbatim_lines(code)
-                .map(|line| {
-                    let mut styled = StyledLine::default();
-                    styled.push_str(line, TextStyle::default());
-                    styled
-                })
-                .collect()
-        })
+    highlight::try_highlight(code, language).unwrap_or_else(|| {
+        line_endings::verbatim_lines(code)
+            .map(|line| {
+                let mut styled = StyledLine::default();
+                styled.push_str(line, TextStyle::default());
+                styled
+            })
+            .collect()
+    })
 }

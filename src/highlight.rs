@@ -54,7 +54,7 @@ static THEME: LazyLock<Theme> = LazyLock::new(|| {
 /// `py`, `js`, `sh`, …) via each grammar's registered file
 /// extensions and aliases. `find_syntax_by_name` is the backstop
 /// for full names like "Rust" or "Markdown".
-pub(crate) fn syntax_for(lang: Option<&str>) -> Option<&'static SyntaxReference> {
+fn syntax_for(lang: Option<&str>) -> Option<&'static SyntaxReference> {
     let name = lang?.trim();
     if name.is_empty() {
         return None;
@@ -74,7 +74,7 @@ pub(crate) fn syntax_for(lang: Option<&str>) -> Option<&'static SyntaxReference>
 ///
 /// Fails when syntect's regex engine gives up on a line (for example on
 /// its backtracking limit); callers then show the text unhighlighted.
-pub(crate) fn highlight_code(code: &str, syntax: &SyntaxReference) -> Result<Vec<StyledLine>> {
+fn highlight_code(code: &str, syntax: &SyntaxReference) -> Result<Vec<StyledLine>> {
     let mut highlighter = HighlightLines::new(syntax, &THEME);
     verbatim_lines(code)
         .map(|line| {
@@ -93,6 +93,23 @@ pub(crate) fn highlight_code(code: &str, syntax: &SyntaxReference) -> Result<Vec
             Ok(styled)
         })
         .collect()
+}
+
+/// Highlight `code` as `language`, or `None` when it is to be shown
+/// without highlighting, as decided by [`usable_highlighting`].
+pub(crate) fn try_highlight(code: &str, language: Option<&str>) -> Option<Vec<StyledLine>> {
+    usable_highlighting(syntax_for(language).map(|syntax| highlight_code(code, syntax)))
+}
+
+/// The highlighted lines of an attempt to highlight, or `None` when the
+/// code is to be shown without highlighting: no known syntax matched its
+/// language (`None`), or syntect failed on it (`Some(Err(_))`).
+///
+/// A failure is a limit of syntect's regex engine on this particular
+/// text, not a problem of the code, which is still worth showing. Callers
+/// show it the way they show code without a language.
+fn usable_highlighting(attempt: Option<Result<Vec<StyledLine>>>) -> Option<Vec<StyledLine>> {
+    attempt.and_then(Result::ok)
 }
 
 fn token_style(style: SyntectStyle) -> TextStyle {
@@ -243,6 +260,36 @@ mod tests {
             .expect("string token")
             .style;
         assert_eq!(lines[1].spans[0].style, string_style);
+    }
+
+    fn line(text: &str) -> StyledLine {
+        let mut line = StyledLine::default();
+        line.push_str(text, TextStyle::default());
+        line
+    }
+
+    #[test]
+    fn successful_highlighting_is_used() {
+        let lines = vec![line("let x = 1;")];
+        assert_eq!(usable_highlighting(Some(Ok(lines.clone()))), Some(lines));
+    }
+
+    #[test]
+    fn failed_highlighting_falls_back() {
+        let failure = Err(anyhow::anyhow!("backtracking limit"));
+        assert_eq!(usable_highlighting(Some(failure)), None);
+    }
+
+    #[test]
+    fn code_without_a_known_syntax_falls_back() {
+        assert_eq!(usable_highlighting(None), None);
+    }
+
+    #[test]
+    fn try_highlight_highlights_known_languages_only() {
+        assert!(try_highlight("let x = 1;", Some("rust")).is_some());
+        assert!(try_highlight("let x = 1;", Some("no-such-language")).is_none());
+        assert!(try_highlight("let x = 1;", None).is_none());
     }
 
     #[test]
