@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A blockquote or heading inside a list item wraps under its own text.
   Its wrapped lines used to start as far right again as the item's bullet
   or number is wide.
+- A lone `\r` line ending ends the line in code blocks, frontmatter and
+  `highlight`, like `\n` and `\r\n` do. It used to stay inside the line,
+  where a terminal moves the cursor back and overwrites the line's start.
+- With `SoftBreaks::Break`, a soft break written as a lone `\r` right
+  before an inline element breaks the line. `a\r**b**` rendered as `ab`.
 
 ## [1.6.1] - 2026-10-14
 

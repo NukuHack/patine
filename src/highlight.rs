@@ -21,6 +21,7 @@ use syntect::highlighting::{FontStyle, Style as SyntectStyle, Theme};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 use two_face::theme::EmbeddedThemeName;
 
+use crate::line_endings::verbatim_lines;
 use crate::styled::{AnsiColor, StyledLine, TextStyle};
 
 // ---------------------------------------------------------
@@ -75,7 +76,7 @@ pub(crate) fn syntax_for(lang: Option<&str>) -> Option<&'static SyntaxReference>
 /// its backtracking limit); callers then show the text unhighlighted.
 pub(crate) fn highlight_code(code: &str, syntax: &SyntaxReference) -> Result<Vec<StyledLine>> {
     let mut highlighter = HighlightLines::new(syntax, &THEME);
-    code.lines()
+    verbatim_lines(code)
         .map(|line| {
             // `extra_newlines` grammars require each input line to
             // terminate in `\n`; the newline is stripped back off the

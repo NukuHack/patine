@@ -47,6 +47,7 @@
 
 mod ansi;
 mod highlight;
+mod line_endings;
 mod options;
 mod render;
 mod styled;
@@ -181,7 +182,9 @@ pub fn render_lines_with(input: &str, width: usize, options: &RenderOptions) -> 
 }
 
 /// Syntax-highlight source code the way patine highlights fenced code
-/// blocks, one [`StyledLine`] per line of `code`.
+/// blocks, one [`StyledLine`] per line of `code`. A line ends at `\n`,
+/// `\r\n` or a lone `\r`, as in CommonMark; a line ending after the last
+/// line adds no empty line.
 ///
 /// `language` is a name or file extension as used after a Markdown code
 /// fence, such as `rust`, `rs`, `Python` or `py`, matched without regard
@@ -209,7 +212,7 @@ pub fn highlight(code: &str, language: Option<&str>) -> Vec<StyledLine> {
     highlight::syntax_for(language)
         .and_then(|syntax| highlight::highlight_code(code, syntax).ok())
         .unwrap_or_else(|| {
-            code.lines()
+            line_endings::verbatim_lines(code)
                 .map(|line| {
                     let mut styled = StyledLine::default();
                     styled.push_str(line, TextStyle::default());

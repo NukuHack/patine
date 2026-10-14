@@ -5,6 +5,7 @@
 use markdown::mdast::Node;
 use unicode_width::UnicodeWidthStr;
 
+use crate::line_endings::{split_line_endings, verbatim_lines};
 use crate::options::{Html, RenderOptions, SoftBreaks};
 use crate::styled::{AnsiColor, StyledLine, TextStyle, Underline};
 
@@ -301,7 +302,7 @@ impl Renderer {
     /// recognized language identifier.
     fn render_code_block_plain(&mut self, value: &str) {
         self.push_style(Style::ForegroundColor(CODE_COLOR));
-        for line in value.lines() {
+        for line in verbatim_lines(value) {
             self.write_indent();
             self.emit(line);
             self.column = UnicodeWidthStr::width(line);
@@ -845,11 +846,4 @@ impl Renderer {
         }
         style
     }
-}
-
-/// Split `text` at CommonMark line endings. markdown-rs keeps them as they
-/// appear in the source: `\n`, `\r\n` or a lone `\r`.
-fn split_line_endings(text: &str) -> impl Iterator<Item = &str> {
-    text.split('\n')
-        .flat_map(|line| line.strip_suffix('\r').unwrap_or(line).split('\r'))
 }

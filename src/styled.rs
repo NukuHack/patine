@@ -154,8 +154,8 @@ impl TextStyle {
 
 /// A run of text drawn in one style.
 ///
-/// The text never contains a newline. It may contain tab characters from
-/// code blocks, which patine passes through verbatim.
+/// The text never contains a line ending, `\n` or `\r`. It may contain
+/// tab characters from code blocks, which patine passes through verbatim.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct StyledSpan {

@@ -263,6 +263,28 @@ fn highlight_of_empty_code_has_no_lines() {
     assert!(highlight("", None).is_empty());
 }
 
+#[test]
+fn highlight_splits_at_every_line_ending() {
+    // `\n`, `\r\n` and a lone `\r` each end a line, as in CommonMark. A
+    // line ending after the last line adds no empty line, and no line
+    // keeps a `\r`.
+    for language in [Some("rust"), None] {
+        for code in [
+            "let a = 1;\nlet b = 2;\n",
+            "let a = 1;\r\nlet b = 2;\r\n",
+            "let a = 1;\rlet b = 2;\r",
+        ] {
+            let lines = highlight(code, language);
+            assert_eq!(
+                texts(&lines),
+                ["let a = 1;", "let b = 2;"],
+                "{code:?} as {language:?}"
+            );
+        }
+    }
+    assert_eq!(texts(&highlight("a\r\rb", None)), ["a", "", "b"]);
+}
+
 // =========================================================
 // Types
 // =========================================================

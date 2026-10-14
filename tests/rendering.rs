@@ -1705,6 +1705,68 @@ fn empty_code_block_then_following_content_still_renders() {
 }
 
 // =========================================================
+// Line endings in verbatim blocks
+// =========================================================
+
+// CommonMark ends a line at `\n`, `\r\n` or a lone `\r`, and markdown-rs
+// keeps whichever the source used in the value of a code block or
+// frontmatter. Every one of them starts a new output line.
+
+#[test]
+fn code_block_lines_end_at_every_line_ending() {
+    for fence in ["```", "```rust"] {
+        for ending in ["\n", "\r\n", "\r"] {
+            let markdown = format!("{fence}{ending}let a;{ending}let b;{ending}```");
+            assert_eq!(
+                plain_lines(&markdown, 80),
+                ["  let a;", "  let b;"],
+                "{markdown:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn lone_carriage_return_inside_a_code_block_ends_the_line() {
+    for fence in ["```", "```rust"] {
+        let markdown = format!("{fence}\nlet a;\rlet b;\n```");
+        assert_eq!(
+            plain_lines(&markdown, 80),
+            ["  let a;", "  let b;"],
+            "{markdown:?}"
+        );
+    }
+}
+
+#[test]
+fn frontmatter_lines_end_at_every_line_ending() {
+    assert_eq!(
+        plain_lines("---\ntitle: a\rdraft: true\n---\n", 80),
+        ["  ---", "  title: a", "  draft: true", "  ---"]
+    );
+}
+
+#[test]
+fn no_span_holds_a_carriage_return() {
+    let documents = [
+        "---\ra: 1\r---\r\r# Title\r\rText\rmore\r\r- item\r  more\r\r> quote\r> more\r\r```\ra\rb\r```\r\r```rust\rlet a;\rlet b;\r```\r\r<div>\rblock\r</div>\r\r| a |\r|---|\r| b |\r\r`co\rde` [li\rnk](u) ![a\rb](u)",
+        "---\r\na: 1\r\n---\r\n\r\nText\r\nmore\r\n\r\n```rust\r\nlet a;\r\n```\r\n",
+    ];
+    for markdown in documents {
+        for options in [RenderOptions::default(), BREAK_AND_LITERAL] {
+            for line in render_lines_with(markdown, 80, &options) {
+                for span in &line {
+                    assert!(
+                        !span.text.contains('\r'),
+                        "{span:?} in {markdown:?} with {options:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+// =========================================================
 // End-to-end showcase: a realistic document using every feature
 // =========================================================
 
@@ -1905,6 +1967,15 @@ fn soft_break_accepts_every_line_ending() {
         plain_lines_with("a\r\nb\rc\nd", 80, BREAK),
         ["a", "b", "c", "d"]
     );
+    // A text node that ends in the line ending, right before an inline
+    // element.
+    for ending in ["\n", "\r\n", "\r"] {
+        assert_eq!(
+            plain_lines_with(&format!("a{ending}**b**"), 80, BREAK),
+            ["a", "b"],
+            "{ending:?}"
+        );
+    }
 }
 
 #[test]
