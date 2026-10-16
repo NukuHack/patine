@@ -3,7 +3,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use markdown::mdast::Node;
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::line_endings::{split_line_endings, verbatim_lines};
 use crate::options::{Html, QuoteStyle, RenderOptions, SoftBreaks};
@@ -73,15 +73,27 @@ enum Style {
 // Inline content on its own
 // =========================================================
 
+/// What the renderer does with a word wider than the line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LongWords {
+    /// The word overflows a line of its own, as in running text.
+    Overflow,
+    /// The word is broken between characters, as in a table cell.
+    Break,
+}
+
 /// Lay out inline content, such as the content of a table cell, as
-/// running text `width` columns wide. Content that draws nothing yields
+/// running text `width` columns wide, with `long_words` deciding what
+/// happens to a word wider than that. Content that draws nothing yields
 /// no lines.
 pub(crate) fn render_inline_lines(
     children: &[Node],
     width: usize,
     options: RenderOptions,
+    long_words: LongWords,
 ) -> Vec<StyledLine> {
     let mut renderer = Renderer::new(width, options);
+    renderer.long_words = long_words;
     renderer.render_inline_content(children);
     renderer.finish()
 }
@@ -171,6 +183,9 @@ pub struct Renderer {
     /// markdown-rs represents inline and block HTML as the same node
     /// type, so only the place in the tree tells them apart.
     in_inline_content: bool,
+
+    /// What happens to a word wider than the line.
+    long_words: LongWords,
 }
 
 impl Renderer {
@@ -190,6 +205,7 @@ impl Renderer {
             prefix: Vec::new(),
             options,
             in_inline_content: false,
+            long_words: LongWords::Overflow,
         }
     }
 
@@ -362,9 +378,10 @@ impl Renderer {
         // under its own.
         let base = self.current_style();
         let options = self.options;
-        let lines = crate::table::layout_table(table, self.effective_width(), |cell, width| {
-            render_inline_lines(cell, width, options)
-        });
+        let lines =
+            crate::table::layout_table(table, self.effective_width(), |cell, width, long_words| {
+                render_inline_lines(cell, width, options, long_words)
+            });
         for line in lines {
             self.write_indent();
             for span in &line.spans {
@@ -737,9 +754,10 @@ impl Renderer {
     /// break there: if the suffix doesn't fit on the current line alongside
     /// the preceding content, it moves to a fresh line. The suffix starts a
     /// word of its own, so text glued to the end of a link (`[link](u)s`)
-    /// stays with it. The URL itself is never broken mid-string — on a
-    /// narrow terminal it may overflow its own line, which is preferable
-    /// to rendering it uncopyable.
+    /// stays with it. In running text the URL itself is never broken
+    /// mid-string — on a narrow terminal it may overflow its own line,
+    /// which is preferable to rendering it uncopyable. In a table cell it
+    /// breaks like any word wider than its column (see [`LongWords`]).
     fn write_dimmed_url_suffix(&mut self, url: &str) {
         self.flush_word();
 
@@ -765,8 +783,10 @@ impl Renderer {
     /// Place the word under construction on the line, preceded by a space
     /// if `pending_space` is set. Wraps to a new line first when the whole
     /// word would exceed the available content width. A word wider than
-    /// the line still moves off a line that has content and then overflows
-    /// its own line; it is never broken inside.
+    /// the line still moves off a line that has content. In running text
+    /// it then overflows its own line and is never broken inside; with
+    /// [`LongWords::Break`] it is broken across lines by
+    /// [`place_broken_word`](Self::place_broken_word).
     fn flush_word(&mut self) {
         if self.word.spans.is_empty() {
             return;
@@ -790,11 +810,46 @@ impl Renderer {
         }
 
         self.pending_space = None;
-        for piece in word {
-            self.line.push_str(&piece.text, piece.style);
+        if self.long_words == LongWords::Break && self.column + width > self.effective_width() {
+            self.place_broken_word(word);
+        } else {
+            for piece in word {
+                self.line.push_str(&piece.text, piece.style);
+            }
+            self.column += width;
         }
-        self.column += width;
         self.mark_drawn();
+    }
+
+    /// Place `word`, which is wider than the rest of the line, across as
+    /// many lines as it needs. The word is cut into units (see
+    /// [`break_units`]), and a unit that would pass the line's end starts
+    /// the next line; a unit wider than a whole line takes a line of its
+    /// own and overflows it. Each unit keeps the style of its piece.
+    ///
+    /// The part of the word on a line is measured span by span, as
+    /// [`StyledLine::width`] measures it and the table layout with it, so
+    /// a line never comes out wider than the check let it be.
+    fn place_broken_word(&mut self, word: StyledLine) {
+        let limit = self.effective_width();
+        let mut start = self.column;
+        let mut on_line = StyledLine::default();
+        for piece in &word {
+            for unit in break_units(&piece.text) {
+                let mut extended = on_line.clone();
+                extended.push_str(unit, piece.style);
+                if start + extended.width() > limit && !on_line.spans.is_empty() {
+                    self.column = start + on_line.width();
+                    self.wrap_line();
+                    start = self.column;
+                    extended = StyledLine::default();
+                    extended.push_str(unit, piece.style);
+                }
+                self.line.push_str(unit, piece.style);
+                on_line = extended;
+            }
+        }
+        self.column = start + on_line.width();
     }
 
     /// Break to a new line and indent it so that wrapped text lines up
@@ -1034,5 +1089,72 @@ impl Renderer {
             }
         }
         style
+    }
+}
+
+// =========================================================
+// Breaking words
+// =========================================================
+
+/// Cut `text` into the units a word wider than its line breaks into:
+/// each character together with what joins it to the characters after
+/// it. These are the zero-width characters after it (variation
+/// selectors, the zero width joiner, combining marks), the character
+/// after a zero width joiner, and emoji skin tone modifiers.
+/// unicode-width gives such a sequence, `⚠️` or a family emoji, a width
+/// of its own that its parts do not add up to, so a unit is never cut.
+///
+/// This is not full grapheme segmentation: the two letters of a flag
+/// emoji, for example, are separate units.
+fn break_units(text: &str) -> Vec<&str> {
+    let mut units = Vec::new();
+    let mut start = 0;
+    let mut after_joiner = false;
+    for (index, c) in text.char_indices() {
+        let joined =
+            after_joiner || c.width() == Some(0) || ('\u{1F3FB}'..='\u{1F3FF}').contains(&c);
+        if index > start && !joined {
+            units.push(&text[start..index]);
+            start = index;
+        }
+        after_joiner = c == '\u{200D}';
+    }
+    if start < text.len() {
+        units.push(&text[start..]);
+    }
+    units
+}
+
+// =========================================================
+// Unit tests
+// =========================================================
+
+#[cfg(test)]
+mod tests {
+    use markdown::mdast::{Strong, Text};
+
+    use super::*;
+
+    fn text(value: &str) -> Node {
+        Node::Text(Text {
+            value: value.to_string(),
+            position: None,
+        })
+    }
+
+    #[test]
+    fn broken_word_stays_within_the_line_across_styles() {
+        // Lam and Alef make one column together, but only as one string:
+        // split across two spans they count 1 + 1. A word broken across
+        // styles is measured span by span, as its lines are.
+        let word = [
+            Node::Strong(Strong {
+                children: vec![text("ل")],
+                position: None,
+            }),
+            text("اب"),
+        ];
+        let lines = render_inline_lines(&word, 2, RenderOptions::default(), LongWords::Break);
+        assert!(lines.iter().all(|line| line.width() <= 2), "{lines:?}");
     }
 }

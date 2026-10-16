@@ -8,7 +8,7 @@ Accepted
 
 Amends [7. Render options for soft breaks and HTML](0007-render-options-for-soft-breaks-and-html.md)
 
-Amended by [11. Table cells render as inline content](0011-table-cells-render-as-inline-content.md)
+Amended by [11. Table cells render as inline content](0011-table-cells-render-as-inline-content.md), also by its amendment in patine 1.7.2
 
 ## Context
 

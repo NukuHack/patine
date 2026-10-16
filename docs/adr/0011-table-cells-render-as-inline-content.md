@@ -6,6 +6,8 @@ Date: 2026-10-16
 
 Accepted
 
+Amended in patine 1.7.2 (see the end)
+
 Amends [6. Render to style-neutral lines](0006-render-to-style-neutral-lines.md)
 
 Amends [8. Glued inline elements wrap as one word](0008-glued-inline-elements-wrap-as-one-word.md)
@@ -54,3 +56,31 @@ its dimmed path, although a column of links gets wider.
 - ADR 6 says the table layout returns lines with bold header cells.
   Cells carry their inline styles, and a header cell adds bold to them.
 - `src/wrap.rs`, the plain-string wrapping of table cells, is removed.
+
+## Amendment (2026-10-16, patine 1.7.2)
+
+With the `(url)` of 1.7.1, a long URL in a cell set its column's
+minimum width, and a table whose minimums did not fit the width
+overflowed. asqr wrapped the overflowing rows, and the table fell
+apart.
+
+The user decided that a word longer than its column is broken across
+lines in table cells, character by character by display width, so the
+table fits the width. Running text keeps its rule: a word wider than
+the line overflows it.
+
+When the columns' widest words do not fit, the columns with the
+longest words shrink, the widest first, to the largest common width at
+which the table fits; a column whose widest word is narrower keeps it
+whole. A word is broken between characters, keeping a character
+together with the zero-width characters, joined emoji and skin tone
+modifiers that follow it. No column gets narrower than its widest such
+unit. Each character keeps its style, so a broken URL is dim on every
+line.
+
+Two consequences above hold for running text only: in a table cell a
+line also breaks inside a word wider than its column, and ADR 8's rule
+that such a word is never broken inside does not apply there. A column
+holding a link is no longer at least as wide as its URL; a table
+overflows only when not even one character per column fits. A URL
+broken in a cell can no longer be selected in one piece.

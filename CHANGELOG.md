@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- A table whose longest words do not fit the width breaks those words
+  across lines, between characters, and fits the width. A long URL in
+  a cell set its column's width and made the table overflow, 66
+  columns for a table rendered at 40. Words that fit their column stay
+  whole, and a broken word keeps its style on every line, so a URL
+  stays dim. A table now overflows only when not even one character
+  per column fits. Running text is unchanged: a word wider than the
+  line still overflows it.
+
 ## [1.7.1] - 2026-10-16
 
 ### Fixed

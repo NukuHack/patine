@@ -901,27 +901,34 @@ fn table_preserves_column_proportions() {
 }
 
 #[test]
-fn table_overflows_when_minimum_widths_exceed_budget() {
-    // Each column contains a single long word that cannot wrap any
-    // narrower. At a tiny terminal width, the table is forced to
-    // overflow — but it must still render cleanly (no panic, no empty
-    // output) and the wide words must appear intact (never split).
+fn table_breaks_long_words_when_their_minimums_exceed_the_budget() {
+    // Each column contains a single long word, and even one word per
+    // column does not fit 10 columns. The words break between characters
+    // so that the table fits, and each column still holds its word.
     let md = "\
 | Col1 | Col2 |
 |---|---|
 | antidisestablishmentarianism | supercalifragilisticexpialidocious |";
-    let output = render_with_width(md, 10);
-    assert!(
-        !output.trim().is_empty(),
-        "expected non-empty output even when overflow is forced"
-    );
-    assert!(
-        output.contains("antidisestablishmentarianism"),
-        "first long word must appear intact:\n{output}"
-    );
-    assert!(
-        output.contains("supercalifragilisticexpialidocious"),
-        "second long word must appear intact:\n{output}"
+    let lines = plain_lines(md, 10);
+    for line in &lines {
+        assert_eq!(line.chars().count(), 10, "{lines:#?}");
+    }
+    let separator = lines
+        .iter()
+        .position(|line| line.starts_with('├'))
+        .expect("separator");
+    let mut columns = [String::new(), String::new()];
+    for line in &lines[separator + 1..lines.len() - 1] {
+        let cells: Vec<&str> = line.split('│').collect();
+        columns[0].push_str(cells[1].trim());
+        columns[1].push_str(cells[2].trim());
+    }
+    assert_eq!(
+        columns,
+        [
+            "antidisestablishmentarianism",
+            "supercalifragilisticexpialidocious"
+        ]
     );
 }
 
@@ -1224,6 +1231,113 @@ fn whitespace_runs_in_a_cell_do_not_widen_its_column() {
     assert_eq!(
         table_rows("| a <b></b> b | c |\n|---|---|\n| x | y |", 80),
         expected
+    );
+}
+
+// =========================================================
+// Words wider than their column
+// =========================================================
+
+// When even the widest words of the columns do not fit the width, the
+// columns with the longest words shrink and those words break between
+// characters, so the table stays whole. Running text keeps its words.
+
+/// The repro of the overflow: a long URL in a cell at width 40.
+const LONG_URL_TABLE: &str = "| step | doc |\n|---|---|\n| retry | see [the policy](https://example.com/handbook/operations/retry-policy) |";
+
+#[test]
+fn long_url_in_a_cell_breaks_to_fit_the_width() {
+    assert_eq!(
+        table_rows(LONG_URL_TABLE, 40),
+        [
+            "│ step  │             doc              │",
+            "│ retry │ see the policy               │",
+            "│       │ (https://example.com/handboo │",
+            "│       │ k/operations/retry-policy)   │",
+        ]
+    );
+    for line in render_lines(LONG_URL_TABLE, 40) {
+        assert_eq!(line.width(), 40, "{line}");
+    }
+}
+
+#[test]
+fn broken_url_stays_dim() {
+    assert_eq!(
+        styled_table_rows(LONG_URL_TABLE, 40)[2..],
+        [
+            "│       │ [dim](https://example.com/handboo[] │",
+            "│       │ [dim]k/operations/retry-policy)[]   │",
+        ]
+    );
+}
+
+#[test]
+fn broken_header_word_stays_bold() {
+    // Width 9 leaves 5 columns for the cell.
+    assert_eq!(
+        styled_table_rows("| aaaaaaaaaa |\n|---|\n| b |", 9),
+        ["│ [bold]aaaaa[] │", "│ [bold]aaaaa[] │", "│ b     │"]
+    );
+}
+
+#[test]
+fn wide_characters_break_between_characters() {
+    // Width 9 leaves 5 columns: two wide characters fit, a third does not.
+    assert_eq!(
+        table_rows("| h |\n|---|\n| 日本語日本語 |", 9),
+        ["│   h   │", "│ 日本  │", "│ 語日  │", "│ 本語  │"]
+    );
+}
+
+#[test]
+fn emoji_sequences_stay_whole_when_a_word_breaks() {
+    // Width 6 leaves 2 columns, the width of each of these emoji.
+    assert_eq!(
+        table_rows("| h |\n|---|\n| x\u{26A0}\u{FE0F} |", 6),
+        ["│ h  │", "│ x  │", "│ \u{26A0}\u{FE0F} │"]
+    );
+    let family = "\u{1F469}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+    assert_eq!(
+        table_rows(&format!("| h |\n|---|\n| x{family} |"), 6),
+        [
+            "│ h  │".to_string(),
+            "│ x  │".to_string(),
+            format!("│ {family} │")
+        ]
+    );
+    // A combining accent stays with its letter.
+    assert_eq!(
+        table_rows("| h |\n|---|\n| xe\u{301}y |", 5),
+        ["│ h │", "│ x │", "│ e\u{301} │", "│ y │"]
+    );
+}
+
+#[test]
+fn table_overflows_only_below_one_unit_per_column() {
+    // Width 6 leaves no column at all for the cells: each column gets the
+    // width of its widest character, and the table overflows.
+    assert_eq!(
+        table_rows("| h | i |\n|---|---|\n| abc | de |", 6),
+        ["│ h │ i │", "│ a │ d │", "│ b │ e │", "│ c │   │"]
+    );
+    assert_eq!(
+        table_rows("| h | i |\n|---|---|\n| 日本 | x |", 6),
+        ["│ h  │ i │", "│ 日 │ x │", "│ 本 │   │"]
+    );
+}
+
+#[test]
+fn long_url_in_running_text_stays_whole() {
+    assert_eq!(
+        plain_lines(
+            "see [the policy](https://example.com/handbook/operations/retry-policy)",
+            40
+        ),
+        [
+            "see the policy",
+            "(https://example.com/handbook/operations/retry-policy)"
+        ]
     );
 }
 

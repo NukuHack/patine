@@ -106,8 +106,9 @@ See https://example.com for details.
 
 The dimmed `(url)` block is treated as one atomic unit when wrapping. If
 it doesn't fit alongside the link text on the current line, the whole
-`(url)` block moves to a fresh line — the URL itself is never broken
-mid-string so it remains copy-pasteable.
+`(url)` block moves to a fresh line — outside table cells, the URL
+itself is never broken mid-string so it remains copy-pasteable. In a
+table cell that would not fit otherwise, it breaks (see Tables).
 
 ## Ordered Lists
 
@@ -205,18 +206,22 @@ Tables use full Unicode box-drawing characters with single-line borders.
   Inline Formatting): bold, italic, strikethrough, inline code in its
   color, links underlined with their dimmed `(url)`, images as
   `[image: alt]` with their dimmed path. A cell wraps like running
-  text: a line breaks only at whitespace and in front of a `(url)`, so
-  glued pieces such as `**bold**,` stay together. A column is never
-  narrower than its widest such word.
+  text: a line breaks at whitespace and in front of a `(url)`, so glued
+  pieces such as `**bold**,` stay together. A word wider than its
+  column is broken between characters only when the table would not fit
+  otherwise (see Column width), and keeps its styles on every line.
 - **Data rows**: 1 space padding on each side.
 - **Separators**: horizontal rules between the header and every data row.
 - **Column width**: a three-tier algorithm. (1) If the natural cell
   widths fit within the available terminal width, use them. (2)
   Otherwise, distribute the available width proportionally between each
   column's minimum (the widest unbreakable token in that column) and
-  its natural width. (3) If even the per-column minimums don't fit, use
-  the minimums and accept that the table overflows the terminal —
-  preferred over breaking words mid-string.
+  its natural width. (3) If even the per-column minimums don't fit, the
+  columns with the longest words shrink, the widest first, until the
+  table fits, and their long words break across lines between
+  characters; columns whose words fit keep them whole. A column never
+  gets narrower than its widest character, so a table overflows only
+  when not even one character per column fits.
 - **Row height**: each cell is word-wrapped to its allocated column
   width, and the row height is the max wrapped height across its cells.
   Shorter cells are blank-padded on the extra lines so the row aligns
@@ -359,7 +364,7 @@ If no alt text is provided:
 The dimmed `(url)` block follows the same atomic-wrapping rule as for
 links: if it doesn't fit alongside the image marker on the current
 line, it moves to a fresh line below rather than being broken
-mid-string.
+mid-string, except in a table cell (see Tables).
 
 ## Style Summary
 

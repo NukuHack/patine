@@ -117,9 +117,10 @@ pub fn render_with(
 /// TOML frontmatter) and lay it out as styled lines for a display `width`
 /// columns wide.
 ///
-/// Text wraps at `width`. Lines may still be wider: words and URLs
-/// longer than the width stay whole, code blocks and frontmatter never
-/// wrap, and a table whose columns cannot shrink any further overflows.
+/// Text wraps at `width`. Lines may still be wider: in running text,
+/// words and URLs longer than the width stay whole; code blocks and
+/// frontmatter never wrap; a table overflows only when not even one
+/// character per column fits (its long words break between characters).
 /// Line prefixes are spans of their own: indents are unstyled spaces and
 /// blockquote bars are `│ ` spans in the style
 /// [`RenderOptions::quote_style`] asks for. Blank lines have no

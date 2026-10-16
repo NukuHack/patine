@@ -4,6 +4,7 @@
 
 use markdown::mdast::{AlignKind, Node};
 
+use crate::render::LongWords;
 use crate::styled::{StyledLine, TextStyle};
 
 // =========================================================
@@ -74,16 +75,19 @@ fn widest(lines: &[StyledLine]) -> usize {
 /// willing to give the table (typically `Renderer::effective_width`
 /// after subtracting nesting and blockquote prefixes). The layout pass
 /// uses it to shrink wide tables down via proportional column
-/// distribution and cell wrapping. When the shrink floor (per-column
-/// minimum widths) still exceeds `available_width`, the table is
-/// rendered at its minimum widths and overflows — the caller is
-/// expected to tolerate this, same as the long-URL-on-its-own-line
-/// behavior.
+/// distribution and cell wrapping. When even the widest words of the
+/// columns do not fit, the columns with the longest words shrink further
+/// and those words break between characters. Only when not even the
+/// widest character of each column fits is the table rendered wider
+/// than `available_width` — the caller is expected to tolerate this,
+/// same as the long-URL-on-its-own-line behavior of running text.
 ///
 /// `render_cell` lays out the inline content of a cell as running text
 /// of the given width, so a cell keeps its inline styles and wraps where
-/// running text would. Header cells add bold on top of those styles. The
-/// caller lays its own context style over these spans.
+/// running text would; its [`LongWords`] argument says whether a word
+/// wider than that width overflows or breaks. Header cells add bold on
+/// top of those styles. The caller lays its own context style over these
+/// spans.
 ///
 /// Layout rules:
 ///   - A column follows the alignment of its delimiter row (`:--` left,
@@ -96,14 +100,15 @@ fn widest(lines: &[StyledLine]) -> usize {
 ///     rows.
 ///   - Column widths are sized to fit within `available_width` when
 ///     possible, shrinking proportionally toward each column's minimum
-///     (widest word that cannot break).
+///     (widest word that cannot break), and below it only as far as the
+///     table needs (see [`distribute_widths`]).
 ///
 /// An empty table (no rows) yields an empty `Vec`; the caller is
 /// expected to treat that as "nothing to render".
 pub fn layout_table(
     table: &markdown::mdast::Table,
     available_width: usize,
-    render_cell: impl Fn(&[Node], usize) -> Vec<StyledLine>,
+    render_cell: impl Fn(&[Node], usize, LongWords) -> Vec<StyledLine>,
 ) -> Vec<StyledLine> {
     let rows: Vec<Vec<&[Node]>> = table.children.iter().map(row_cells).collect();
     if rows.is_empty() {
@@ -115,26 +120,38 @@ pub fn layout_table(
         return Vec::new();
     }
 
-    // ── Measure per-column natural and minimum widths ───────────────────
-    // `natural`[i] = width of the widest cell in column i laid out on one
-    //                line (what we'd use if space were unlimited).
-    // `minimum`[i] = width of the widest word in any cell in column i
-    //                that cannot break — the floor below which wrapping
-    //                cannot shrink the column without making a word
-    //                overflow. Laid out one column wide, a cell puts
-    //                every such word on a line of its own. We
-    //                additionally floor at 1 so that a column of empty
-    //                cells still has a visible, paddable slot.
+    // ── Measure per-column natural, minimum and smallest widths ─────────
+    // `natural`[i]  = width of the widest cell in column i laid out on one
+    //                 line (what we'd use if space were unlimited).
+    // `minimum`[i]  = width of the widest word in any cell in column i
+    //                 that cannot break — the floor below which wrapping
+    //                 alone cannot shrink the column; narrower, a word has
+    //                 to break. Laid out one column wide without breaking,
+    //                 a cell puts every such word on a line of its own.
+    // `smallest`[i] = width of the widest piece a word breaks into in any
+    //                 cell in column i (a character, or an emoji sequence
+    //                 that stays whole): the floor below which nothing
+    //                 can shrink the column. Laid out one column wide with
+    //                 breaking, a cell puts every such piece on a line of
+    //                 its own.
+    // All are floored at 1 so that a column of empty cells still has a
+    // visible, paddable slot, and `smallest` never exceeds `minimum`: a
+    // word broken into pieces is never wider than the word.
     let mut natural: Vec<usize> = vec![0; num_cols];
     let mut minimum: Vec<usize> = vec![0; num_cols];
+    let mut smallest: Vec<usize> = vec![0; num_cols];
     for row in &rows {
         for (i, cell) in row.iter().enumerate() {
-            natural[i] = natural[i].max(widest(&render_cell(cell, UNLIMITED)));
-            minimum[i] = minimum[i].max(widest(&render_cell(cell, 1)));
+            natural[i] = natural[i].max(widest(&render_cell(cell, UNLIMITED, LongWords::Overflow)));
+            minimum[i] = minimum[i].max(widest(&render_cell(cell, 1, LongWords::Overflow)));
+            smallest[i] = smallest[i].max(widest(&render_cell(cell, 1, LongWords::Break)));
         }
     }
     for m in &mut minimum {
         *m = (*m).max(1);
+    }
+    for (s, m) in smallest.iter_mut().zip(&minimum) {
+        *s = (*s).clamp(1, *m);
     }
     // A column cannot be asked to render narrower than its minimum.
     for i in 0..num_cols {
@@ -149,7 +166,7 @@ pub fn layout_table(
     // budget is available for cell content given the terminal width.
     let border_overhead = PER_CELL_OVERHEAD * num_cols + TRAILING_BORDER;
     let content_budget = available_width.saturating_sub(border_overhead);
-    let col_widths = distribute_widths(&natural, &minimum, content_budget);
+    let col_widths = distribute_widths(&natural, &minimum, &smallest, content_budget);
 
     // ── Wrap each cell to its allocated column width ────────────────────
     // Each cell becomes its wrapped lines. Row height is the max cell
@@ -160,7 +177,7 @@ pub fn layout_table(
         .map(|row| {
             (0..num_cols)
                 .map(|i| match row.get(i) {
-                    Some(cell) => render_cell(cell, col_widths[i]),
+                    Some(cell) => render_cell(cell, col_widths[i], LongWords::Break),
                     None => Vec::new(),
                 })
                 .collect()
@@ -210,14 +227,19 @@ pub fn layout_table(
 /// 1. If the natural widths already fit within `budget`, return them
 ///    unchanged (fast path — tables that fit don't shrink).
 /// 2. Otherwise, seed every column with its `minimum` width.
-/// 3. If even the minimums exceed `budget`, return the minimums and
-///    accept the overflow. This is the graceful fallback: a table of
-///    unbreakable tokens stays readable at the cost of its width.
+/// 3. If even the minimums reach `budget`, shrink the columns with the
+///    longest words below their minimum, down to their `smallest` width
+///    (see [`shrink_below_minimums`]); their words then break.
 /// 4. Otherwise, distribute `leftover = budget - sum(minimums)` on top
 ///    of each column proportionally to its "want" (`natural[i] -
 ///    minimum[i]`). Any rounding remainder is given out round-robin to
 ///    columns still below their natural width.
-fn distribute_widths(natural: &[usize], minimum: &[usize], budget: usize) -> Vec<usize> {
+fn distribute_widths(
+    natural: &[usize],
+    minimum: &[usize],
+    smallest: &[usize],
+    budget: usize,
+) -> Vec<usize> {
     let num_cols = natural.len();
     debug_assert_eq!(num_cols, minimum.len());
 
@@ -228,10 +250,7 @@ fn distribute_widths(natural: &[usize], minimum: &[usize], budget: usize) -> Vec
 
     let minimum_sum: usize = minimum.iter().sum();
     if minimum_sum >= budget {
-        // Even the minimums don't fit. Return them and let the caller
-        // accept the overflow — preferred over making content
-        // unreadable.
-        return minimum.to_vec();
+        return shrink_below_minimums(minimum, smallest, budget);
     }
 
     // At this point sum(minimum) < budget < sum(natural). We have
@@ -281,6 +300,59 @@ fn distribute_widths(natural: &[usize], minimum: &[usize], budget: usize) -> Vec
     result
 }
 
+/// Fit columns into `budget` when their `minimum` widths, the widest
+/// words that cannot break, do not fit: the columns with the longest
+/// words give up width first, and only as much as the table needs.
+///
+/// Every column is cut to a common cap, the largest at which the table
+/// fits, but never below its `smallest` width, the widest piece a word
+/// breaks into. A column whose words all fit under the cap keeps its
+/// minimum, so its words stay whole. The columns left over after the cap
+/// go one each, left to right, to the columns at the cap. With the
+/// minimums summing to exactly `budget`, they are returned unchanged.
+///
+/// When not even the `smallest` widths fit, they are returned and the
+/// table overflows: no column can get narrower than one piece of a word.
+fn shrink_below_minimums(minimum: &[usize], smallest: &[usize], budget: usize) -> Vec<usize> {
+    if smallest.iter().sum::<usize>() >= budget {
+        return smallest.to_vec();
+    }
+
+    let capped = |cap: usize| -> Vec<usize> {
+        minimum
+            .iter()
+            .zip(smallest)
+            .map(|(&m, &s)| cap.min(m).max(s))
+            .collect()
+    };
+    let fits = |cap: usize| capped(cap).iter().sum::<usize>() <= budget;
+
+    // The smallest widths fit, so a cap of 1 does. Raise it while the
+    // next one still fits; at the widest minimum every column has its
+    // minimum, and a higher cap changes nothing.
+    let widest_minimum = minimum.iter().copied().max().unwrap_or(1);
+    let mut cap = 1;
+    while cap < widest_minimum && fits(cap + 1) {
+        cap += 1;
+    }
+
+    // Raising the cap by one adds a column to each column at the cap and
+    // no longer fits, so fewer columns are left over than there are
+    // columns at the cap.
+    let mut result = capped(cap);
+    let mut leftover = budget - result.iter().sum::<usize>();
+    for i in 0..result.len() {
+        if leftover == 0 {
+            break;
+        }
+        if smallest[i] <= cap && cap < minimum[i] {
+            result[i] += 1;
+            leftover -= 1;
+        }
+    }
+    result
+}
+
 // =========================================================
 // Line builders
 // =========================================================
@@ -312,8 +384,9 @@ fn row_line(
         line.push_str(" ", plain);
 
         let cell_line = wrapped[col].get(line_idx).unwrap_or(&empty);
-        // If a word overflowed its allotted width during wrapping, the
-        // line may be wider than `width`. In that case we produce zero
+        // A line is wider than `width` only when the column is narrower
+        // than the widest piece a word breaks into, below the smallest
+        // widths of `shrink_below_minimums`. In that case we produce zero
         // padding — the row will be wider than `width` for this line,
         // which is the overflow fallback.
         let padding = width.saturating_sub(cell_line.width());
@@ -386,19 +459,63 @@ mod tests {
         let minimum = vec![1, 1, 1];
         let budget = 30;
         assert_eq!(
-            distribute_widths(&natural, &minimum, budget),
+            distribute_widths(&natural, &minimum, &[1, 1, 1], budget),
             vec![5, 10, 15]
         );
     }
 
     #[test]
-    fn distribute_returns_minimum_when_budget_too_small() {
+    fn distribute_returns_minimum_when_it_matches_the_budget() {
         let natural = vec![10, 20, 30];
         let minimum = vec![5, 8, 12];
-        let budget = 20; // < sum(minimum) = 25
         assert_eq!(
-            distribute_widths(&natural, &minimum, budget),
+            distribute_widths(&natural, &minimum, &[1, 1, 1], 25),
             vec![5, 8, 12]
+        );
+    }
+
+    #[test]
+    fn distribute_shrinks_below_minimum_when_budget_too_small() {
+        // sum(minimum) = 25 > 20: the widest column gives up the most.
+        let natural = vec![10, 20, 30];
+        let minimum = vec![5, 8, 12];
+        assert_eq!(
+            distribute_widths(&natural, &minimum, &[1, 1, 1], 20),
+            vec![5, 8, 7]
+        );
+    }
+
+    // ── Shrinking below the widest words ────────────────────────────────
+
+    #[test]
+    fn shrinking_cuts_the_column_with_the_longest_word() {
+        assert_eq!(shrink_below_minimums(&[5, 54], &[1, 1], 33), [5, 28]);
+    }
+
+    #[test]
+    fn shrinking_keeps_columns_whose_words_fit() {
+        let minimum = [3, 10, 10];
+        assert_eq!(shrink_below_minimums(&minimum, &[1, 1, 1], 15), [3, 6, 6]);
+        // The column left over goes to the first column at the cap.
+        assert_eq!(shrink_below_minimums(&minimum, &[1, 1, 1], 16), [3, 7, 6]);
+    }
+
+    #[test]
+    fn shrinking_stops_at_the_widest_unit() {
+        let minimum = [8, 8];
+        assert_eq!(shrink_below_minimums(&minimum, &[2, 1], 4), [2, 2]);
+        assert_eq!(shrink_below_minimums(&minimum, &[2, 1], 3), [2, 1]);
+        // Not even the widest units fit: the table overflows.
+        assert_eq!(shrink_below_minimums(&minimum, &[2, 1], 2), [2, 1]);
+    }
+
+    #[test]
+    fn shrinking_gives_the_remainder_to_columns_at_the_cap() {
+        // The first column is held above the cap by its widest unit, so
+        // the column left over goes to the second.
+        assert_eq!(
+            shrink_below_minimums(&[10, 10, 10], &[4, 1, 1], 9),
+            [4, 3, 2]
         );
     }
 
@@ -412,7 +529,7 @@ mod tests {
         let natural = vec![10, 20, 30];
         let minimum = vec![1, 2, 3];
         let budget = 30;
-        let result = distribute_widths(&natural, &minimum, budget);
+        let result = distribute_widths(&natural, &minimum, &[1, 1, 1], budget);
         assert_eq!(result.iter().sum::<usize>(), 30);
         assert!(result[0] < result[1]);
         assert!(result[1] < result[2]);
@@ -429,7 +546,7 @@ mod tests {
         let natural = vec![8, 7, 5];
         let minimum = vec![1, 1, 1];
         let budget = 10;
-        let result = distribute_widths(&natural, &minimum, budget);
+        let result = distribute_widths(&natural, &minimum, &[1, 1, 1], budget);
         assert_eq!(result.iter().sum::<usize>(), 10);
         assert!(result.iter().zip(minimum.iter()).all(|(r, m)| r >= m));
         assert!(result.iter().zip(natural.iter()).all(|(r, n)| r <= n));
