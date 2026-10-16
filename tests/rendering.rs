@@ -1811,6 +1811,74 @@ fn block_after_a_first_block_that_drew_nothing_starts_under_the_bullet() {
     assert_eq!(plain_lines("- ```\n  ```\n\n  > q", 80), ["• ", "  │ q"]);
 }
 
+#[test]
+fn paragraph_after_an_empty_block_follows_the_bullet() {
+    // Nothing has been drawn after the bullet, so the paragraph starts on
+    // the next line without a blank line, as a quote does.
+    assert_eq!(plain_lines("- <div>\n\n  para", 80), ["• ", "  para"]);
+}
+
+#[test]
+fn paragraph_after_an_empty_code_block_follows_the_bullet() {
+    assert_eq!(plain_lines("- ```\n  ```\n\n  para", 80), ["• ", "  para"]);
+}
+
+#[test]
+fn paragraph_after_an_empty_paragraph_follows_the_bullet() {
+    // The first paragraph holds only inline HTML that is not drawn.
+    assert_eq!(plain_lines("- <b></b>\n\n  para", 80), ["• ", "  para"]);
+}
+
+#[test]
+fn second_paragraph_of_an_item_keeps_its_blank_line() {
+    assert_eq!(plain_lines("- a\n\n  b", 80), ["• a", "", "  b"]);
+}
+
+// =========================================================
+// Spacing of a list by its parent
+// =========================================================
+
+// A list nested directly in a list item follows the item's text without
+// a blank line. Any other list gets the blank line before it, also when
+// a quote or footnote around it sits in a list item.
+
+#[test]
+fn list_directly_in_an_item_follows_its_text() {
+    assert_eq!(plain_lines("- a\n  - b", 80), ["• a", "  • b"]);
+    assert_eq!(plain_lines("- a\n\n  - b", 80), ["• a", "  • b"]);
+    assert_eq!(plain_lines("- > - c", 80), ["• ", "  │ • c"]);
+}
+
+#[test]
+fn list_after_text_in_a_quote_in_an_item_gets_a_blank_line() {
+    assert_eq!(
+        plain_lines("- a\n\n  > b\n  >\n  > - c", 80),
+        ["• a", "", "  │ b", "  │ ", "  │ • c"]
+    );
+}
+
+#[test]
+fn quote_in_an_item_spaces_a_list_like_a_top_level_quote() {
+    let top_level = plain_lines("> b\n>\n> - c", 80);
+    let in_item = plain_lines("- a\n\n  > b\n  >\n  > - c", 80);
+    assert_eq!(
+        in_item[2..],
+        top_level
+            .iter()
+            .map(|line| format!("  {line}"))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn list_in_a_footnote_definition_in_an_item_gets_a_blank_line() {
+    // At the top level, `a\n\n[^1]: - x` already gets the blank line.
+    assert_eq!(
+        plain_lines("- a\n\n  [^1]: - x\n\nb[^1]", 80),
+        ["• a", "", "  • x", "", "b"]
+    );
+}
+
 // =========================================================
 // Regression: blockquote must not emit bare styles before first bar
 // =========================================================

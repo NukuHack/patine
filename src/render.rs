@@ -216,7 +216,7 @@ impl Renderer {
             Node::Emphasis(e) => self.render_emphasis(&e.children),
             Node::Break(_) => self.write_hard_break(),
             Node::InlineCode(c) => self.render_inline_code(&c.value),
-            Node::List(l) => self.render_list(l),
+            Node::List(l) => self.render_list(l, false),
             Node::Blockquote(bq) => self.render_blockquote(&bq.children),
             Node::Code(c) => self.render_fenced_text(&c.value, c.lang.as_deref()),
             Node::Yaml(y) => self.render_frontmatter(&y.value, "---", "yaml"),
@@ -393,15 +393,13 @@ impl Renderer {
         });
     }
 
-    fn render_list(&mut self, list: &markdown::mdast::List) {
-        // Top-level lists need block spacing from surrounding content.
-        // Lists inside a list item only need a line break — the parent
-        // item's content already ended with one.
-        let in_item = self
-            .prefix
-            .iter()
-            .any(|segment| matches!(segment, Segment::Item { .. }));
-        if !in_item {
+    /// Render a list. A list `directly_in_item`, nested in a list item
+    /// without a block between them, follows the item's text without a
+    /// blank line: the item's content already ended with a line break.
+    /// Every other list, such as one in a quote or footnote that itself
+    /// sits in a list item, is spaced from what comes before it.
+    fn render_list(&mut self, list: &markdown::mdast::List, directly_in_item: bool) {
+        if !directly_in_item {
             self.ensure_block_spacing();
         }
         let mut number = list.start.unwrap_or(1);
@@ -475,7 +473,10 @@ impl Renderer {
         // `render_paragraph`'s `ensure_block_spacing` alone leaves the
         // caret at column 0 — without re-emitting the continuation
         // indent, the second paragraph would render back at the left
-        // margin instead of aligned under the bullet.
+        // margin instead of aligned under the bullet. While nothing has
+        // been drawn after the bullet (the blocks before drew nothing),
+        // the paragraph follows the bullet on the next line without a
+        // blank line, as a block in that place does.
         let mut is_first = true;
         for child in children {
             let dim = done && !matches!(child, Node::List(_));
@@ -485,7 +486,11 @@ impl Renderer {
             match child {
                 Node::Paragraph(p) => {
                     if !is_first {
-                        self.ensure_block_spacing();
+                        if self.innermost_item_is_bare() {
+                            self.ensure_line_break();
+                        } else {
+                            self.ensure_block_spacing();
+                        }
                         self.write_indent();
                         if self.continuation_indent() > 0 {
                             self.write_continuation_indent();
@@ -520,8 +525,9 @@ impl Renderer {
                     } else {
                         self.ensure_line_break();
                     }
-                    self.with_segment(Segment::Nest(NEST_INDENT_WIDTH), |renderer| {
-                        renderer.render_node(other);
+                    self.with_segment(Segment::Nest(NEST_INDENT_WIDTH), |renderer| match other {
+                        Node::List(list) => renderer.render_list(list, true),
+                        _ => renderer.render_node(other),
                     });
                     // A block that draws nothing leaves `at_start` set,
                     // but the bullet above is output that a later block

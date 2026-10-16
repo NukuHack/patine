@@ -176,11 +176,19 @@ and vice versa).
 All nesting levels use the same `•` bullet character; task items show a
 box instead (see Task Lists).
 
+A list nested directly in a list item follows the item's text without a
+blank line. A list inside a quote or footnote gets the blank line it
+gets anywhere else, also when the quote or footnote sits in a list item.
+
 A single list item may contain multiple paragraphs (a "loose" list).
 Subsequent paragraphs are separated from the first by a blank line and
 aligned to the same continuation indent — i.e. they sit past the bullet,
 vertically aligned with the wrapped lines of the first paragraph rather
-than back at the left margin.
+than back at the left margin. When nothing has been drawn after the
+bullet, for example because the item starts with an HTML block that is
+not shown or an empty code block, the next paragraph starts on the line
+under the bullet without a blank line, like a quote or code block in
+the same place.
 
 ## Tables
 

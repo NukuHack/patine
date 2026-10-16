@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   running text: glued pieces such as `**bold**,` stay on one line, and
   a `(url)` may move to the next line. A run of spaces in a cell, or
   inline HTML that is not drawn, no longer widens its column.
+- A list after text in a block quote inside a list item gets the blank
+  line, carrying the bar, that it gets in a quote anywhere else: `- a`
+  followed by a quote `b` and a list `c` rendered `  │ b` and `  │ • c`
+  with no line between them. The same holds for a list in a footnote
+  definition inside a list item.
+- A paragraph in a list item whose earlier blocks drew nothing, such as
+  an HTML block under `Html::Drop` or an empty code block, follows the
+  bullet on the next line without a blank line, as a quote or code
+  block there does.
 
 ## [1.7.0] - 2026-10-16
 
