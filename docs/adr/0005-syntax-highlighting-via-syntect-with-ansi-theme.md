@@ -6,6 +6,8 @@ Date: 2026-04-17
 
 Accepted
 
+Amended by [12. Anchor the level lookaheads of the Log syntax](0012-anchor-the-level-lookaheads-of-the-log-syntax.md)
+
 ## Context
 
 Fenced code blocks have until now been rendered in a single distinct

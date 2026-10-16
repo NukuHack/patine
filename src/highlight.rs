@@ -18,7 +18,8 @@ use std::sync::LazyLock;
 use anyhow::{Context, Result};
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{FontStyle, Style as SyntectStyle, Theme};
-use syntect::parsing::{SyntaxReference, SyntaxSet};
+use syntect::parsing::syntax_definition::Pattern;
+use syntect::parsing::{Regex, SyntaxReference, SyntaxSet, SyntaxSetBuilder};
 use two_face::theme::EmbeddedThemeName;
 
 use crate::line_endings::verbatim_lines;
@@ -33,6 +34,15 @@ use crate::styled::{AnsiColor, StyledLine, TextStyle};
 // reuse across every code block in every render.
 
 static SYNTAXES: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
+
+/// two-face's syntax set with the level lookaheads of its Log syntax
+/// anchored (see [`anchor_level_lookaheads`]); only `log` highlights
+/// from it. syntect cannot change one syntax of a built set, so this is
+/// a second set: rebuilding it takes about 0.2 s and keeps about 7 MB,
+/// which only a process that highlights a log pays, once.
+static ANCHORED_LOG_SYNTAXES: LazyLock<SyntaxSet> = LazyLock::new(|| {
+    anchor_level_lookaheads(&two_face::syntax::extra_newlines().into_builder()).build()
+});
 
 static THEME: LazyLock<Theme> = LazyLock::new(|| {
     two_face::theme::extra()
@@ -54,14 +64,79 @@ static THEME: LazyLock<Theme> = LazyLock::new(|| {
 /// `py`, `js`, `sh`, …) via each grammar's registered file
 /// extensions and aliases. `find_syntax_by_name` is the backstop
 /// for full names like "Rust" or "Markdown".
-fn syntax_for(lang: Option<&str>) -> Option<&'static SyntaxReference> {
+fn syntax_for(lang: Option<&str>) -> Option<(&'static SyntaxSet, &'static SyntaxReference)> {
     let name = lang?.trim();
     if name.is_empty() {
         return None;
     }
-    SYNTAXES
+    let syntax = SYNTAXES
         .find_syntax_by_token(name)
-        .or_else(|| SYNTAXES.find_syntax_by_name(name))
+        .or_else(|| SYNTAXES.find_syntax_by_name(name))?;
+    if syntax.name == LOG_SYNTAX {
+        let anchored = ANCHORED_LOG_SYNTAXES
+            .find_syntax_by_name(LOG_SYNTAX)
+            .expect("the anchored set holds every syntax of the shipped one");
+        return Some((&ANCHORED_LOG_SYNTAXES, anchored));
+    }
+    Some((&SYNTAXES, syntax))
+}
+
+// ---------------------------------------------------------
+// Anchored level lookaheads of the Log syntax (see ADR 0012)
+// ---------------------------------------------------------
+//
+// The Log syntax's context `main` includes `log_level_lines`, whose
+// lookaheads test a line for a level word. They have no anchor: on a
+// line without the word, the regex engine tries the lookahead at every
+// position from the start of the search, and each try scans to the end
+// of the line, so a line takes time quadratic in its length. syntect
+// then remembers the miss for the rest of the line.
+//
+// syntect searches one line at a time, from its current position. If
+// such a lookahead holds at some position, it holds at the start of the
+// search too, since `.*` reaches every later position of the line. So
+// the search finds a match at its start or none, and `\G`, which
+// matches only where the search starts, finds the same after one try.
+
+/// Name of two-face's Log syntax.
+const LOG_SYNTAX: &str = "log";
+
+/// The context of the Log syntax that tests a line for its level.
+const LEVEL_CONTEXT: &str = "log_level_lines";
+
+/// The patterns of [`LEVEL_CONTEXT`] as two-face ships them. Only these
+/// exact texts are anchored: a pattern that changes upstream is left as
+/// it is rather than rewritten on a guess, and a test fails.
+const LEVEL_LOOKAHEADS: [&str; 4] = [
+    r"(?=.*\b(?i:fail(?:ure|ed)?|error|exception|fatal|critical)\b)",
+    r"(?=.*\b(?i:warn(?:ing)?)\b)",
+    r"(?=.*\b(?i:info)\b)",
+    r"(?=.*\b(?i:debug)\b)",
+];
+
+/// A copy of `syntaxes` whose Log syntax has `\G` in front of each of
+/// [`LEVEL_LOOKAHEADS`]. Every syntax definition is copied as it is.
+fn anchor_level_lookaheads(syntaxes: &SyntaxSetBuilder) -> SyntaxSetBuilder {
+    // A builder gives no mutable access to its definitions, so each one
+    // is copied into a new builder. The new builder has no syntaxes by
+    // file path, which patine never looks up.
+    let mut anchored = SyntaxSetBuilder::new();
+    for definition in syntaxes.syntaxes() {
+        let mut definition = definition.clone();
+        if definition.name == LOG_SYNTAX
+            && let Some(context) = definition.contexts.get_mut(LEVEL_CONTEXT)
+        {
+            for pattern in &mut context.patterns {
+                if let Pattern::Match(pattern) = pattern
+                    && LEVEL_LOOKAHEADS.contains(&pattern.regex.regex_str())
+                {
+                    pattern.regex = Regex::new(format!(r"\G{}", pattern.regex.regex_str()));
+                }
+            }
+        }
+        anchored.add(definition);
+    }
+    anchored
 }
 
 /// Highlight `code` line by line. Each returned line holds the tokens of
@@ -74,7 +149,11 @@ fn syntax_for(lang: Option<&str>) -> Option<&'static SyntaxReference> {
 ///
 /// Fails when syntect's regex engine gives up on a line (for example on
 /// its backtracking limit); callers then show the text unhighlighted.
-fn highlight_code(code: &str, syntax: &SyntaxReference) -> Result<Vec<StyledLine>> {
+fn highlight_code(
+    code: &str,
+    syntaxes: &SyntaxSet,
+    syntax: &SyntaxReference,
+) -> Result<Vec<StyledLine>> {
     let mut highlighter = HighlightLines::new(syntax, &THEME);
     verbatim_lines(code)
         .map(|line| {
@@ -83,7 +162,7 @@ fn highlight_code(code: &str, syntax: &SyntaxReference) -> Result<Vec<StyledLine
             // final token below.
             let line_with_newline = format!("{line}\n");
             let tokens = highlighter
-                .highlight_line(&line_with_newline, &SYNTAXES)
+                .highlight_line(&line_with_newline, syntaxes)
                 .context("highlight code line")?;
             let mut styled = StyledLine::default();
             for (style, text) in tokens {
@@ -98,7 +177,9 @@ fn highlight_code(code: &str, syntax: &SyntaxReference) -> Result<Vec<StyledLine
 /// Highlight `code` as `language`, or `None` when it is to be shown
 /// without highlighting, as decided by [`usable_highlighting`].
 pub(crate) fn try_highlight(code: &str, language: Option<&str>) -> Option<Vec<StyledLine>> {
-    usable_highlighting(syntax_for(language).map(|syntax| highlight_code(code, syntax)))
+    usable_highlighting(
+        syntax_for(language).map(|(syntaxes, syntax)| highlight_code(code, syntaxes, syntax)),
+    )
 }
 
 /// The highlighted lines of an attempt to highlight, or `None` when the
@@ -152,6 +233,7 @@ fn decode_ansi(style: SyntectStyle) -> Option<AnsiColor> {
 mod tests {
     use super::*;
     use syntect::highlighting::{Color as SyntectColor, FontStyle, Style};
+    use syntect::parsing::{ParseState, ScopeStackOp};
 
     fn style_with(r: u8, a: u8) -> Style {
         Style {
@@ -228,8 +310,9 @@ mod tests {
 
     #[test]
     fn highlight_code_yields_one_line_per_source_line() {
-        let rust = syntax_for(Some("rust")).expect("rust is bundled");
-        let lines = highlight_code("let x = 1;\n\nlet y = 2;\n", rust).expect("valid rust");
+        let (syntaxes, rust) = syntax_for(Some("rust")).expect("rust is bundled");
+        let lines =
+            highlight_code("let x = 1;\n\nlet y = 2;\n", syntaxes, rust).expect("valid rust");
         let texts: Vec<String> = lines
             .iter()
             .map(|line| line.spans.iter().map(|span| span.text.as_str()).collect())
@@ -240,8 +323,8 @@ mod tests {
 
     #[test]
     fn highlight_code_colors_tokens_from_the_palette() {
-        let rust = syntax_for(Some("rust")).expect("rust is bundled");
-        let lines = highlight_code("let x = 1;", rust).expect("valid rust");
+        let (syntaxes, rust) = syntax_for(Some("rust")).expect("rust is bundled");
+        let lines = highlight_code("let x = 1;", syntaxes, rust).expect("valid rust");
         let keyword = &lines[0].spans[0];
         assert_eq!(keyword.text, "let");
         assert!(keyword.style.foreground.is_some(), "{keyword:?}");
@@ -251,8 +334,9 @@ mod tests {
     fn highlight_code_carries_lexer_state_across_lines() {
         // The second line is still inside the string literal opened on the
         // first, so it is styled like the string, not like code.
-        let rust = syntax_for(Some("rust")).expect("rust is bundled");
-        let lines = highlight_code("let s = \"open\nstill string\";", rust).expect("valid rust");
+        let (syntaxes, rust) = syntax_for(Some("rust")).expect("rust is bundled");
+        let lines =
+            highlight_code("let s = \"open\nstill string\";", syntaxes, rust).expect("valid rust");
         let string_style = lines[0]
             .spans
             .iter()
@@ -290,6 +374,156 @@ mod tests {
         assert!(try_highlight("let x = 1;", Some("rust")).is_some());
         assert!(try_highlight("let x = 1;", Some("no-such-language")).is_none());
         assert!(try_highlight("let x = 1;", None).is_none());
+    }
+
+    // ── The Log syntax's level lookaheads ───────────────────────────────
+
+    /// The regular expressions of the Log syntax's [`LEVEL_CONTEXT`].
+    fn level_patterns(syntaxes: &SyntaxSetBuilder) -> Vec<String> {
+        let log = syntaxes
+            .syntaxes()
+            .iter()
+            .find(|definition| definition.name == LOG_SYNTAX)
+            .expect("two-face ships the Log syntax");
+        log.contexts[LEVEL_CONTEXT]
+            .patterns
+            .iter()
+            .map(|pattern| match pattern {
+                Pattern::Match(pattern) => pattern.regex.regex_str().to_string(),
+                Pattern::Include(reference) => format!("include {reference:?}"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_shipped_log_syntax_has_the_four_level_lookaheads() {
+        // When a two-face release changes these patterns, the anchoring no
+        // longer applies to them and has to be looked at again.
+        let shipped = two_face::syntax::extra_newlines().into_builder();
+        assert_eq!(level_patterns(&shipped), LEVEL_LOOKAHEADS);
+    }
+
+    #[test]
+    fn anchoring_puts_g_in_front_of_each_level_lookahead() {
+        let shipped = two_face::syntax::extra_newlines().into_builder();
+        assert_eq!(
+            level_patterns(&anchor_level_lookaheads(&shipped)),
+            LEVEL_LOOKAHEADS.map(|pattern| format!(r"\G{pattern}"))
+        );
+    }
+
+    #[test]
+    fn anchoring_leaves_every_other_pattern_alone() {
+        let shipped = two_face::syntax::extra_newlines().into_builder();
+        let anchored = anchor_level_lookaheads(&shipped);
+        assert_eq!(shipped.syntaxes().len(), anchored.syntaxes().len());
+        for (before, after) in shipped.syntaxes().iter().zip(anchored.syntaxes()) {
+            if before.name != LOG_SYNTAX {
+                assert_eq!(before, after);
+                continue;
+            }
+            let mut before = before.clone();
+            let mut after = after.clone();
+            let level_before = before
+                .contexts
+                .remove(LEVEL_CONTEXT)
+                .expect("shipped level context");
+            let level_after = after
+                .contexts
+                .remove(LEVEL_CONTEXT)
+                .expect("anchored level context");
+            assert_eq!(before, after, "the Log syntax outside its level context");
+            assert_eq!(level_before.patterns.len(), level_after.patterns.len());
+            for (before, after) in level_before.patterns.iter().zip(&level_after.patterns) {
+                let (Pattern::Match(before), Pattern::Match(after)) = (before, after) else {
+                    panic!("the level context holds match patterns only");
+                };
+                assert_eq!(before.scope, after.scope);
+                assert_eq!(before.captures, after.captures);
+                assert_eq!(before.has_captures, after.has_captures);
+                assert_eq!(before.operation, after.operation);
+                assert_eq!(before.with_prototype, after.with_prototype);
+            }
+        }
+    }
+
+    #[test]
+    fn log_highlights_from_the_anchored_syntax_set() {
+        let (syntaxes, log) = syntax_for(Some("log")).expect("log is bundled");
+        assert!(std::ptr::eq(syntaxes, &*ANCHORED_LOG_SYNTAXES));
+        assert_eq!(log.name, LOG_SYNTAX);
+        let (syntaxes, _) = syntax_for(Some("rust")).expect("rust is bundled");
+        assert!(std::ptr::eq(syntaxes, &*SYNTAXES));
+    }
+
+    /// The scope operations of each line of `text` under the Log syntax
+    /// of `syntaxes`.
+    fn log_scope_ops(syntaxes: &SyntaxSet, text: &str) -> Vec<Vec<(usize, ScopeStackOp)>> {
+        let log = syntaxes
+            .find_syntax_by_name(LOG_SYNTAX)
+            .expect("log is bundled");
+        let mut state = ParseState::new(log);
+        verbatim_lines(text)
+            .map(|line| {
+                state
+                    .parse_line(&format!("{line}\n"), syntaxes)
+                    .expect("the Log syntax parses every line")
+            })
+            .collect()
+    }
+
+    /// How many line annotations, such as `meta.annotation.error-line.log`
+    /// for a line holding an error, `ops` pushes.
+    fn line_annotations(ops: &[Vec<(usize, ScopeStackOp)>]) -> usize {
+        ops.iter()
+            .flatten()
+            .filter(|(_, op)| match op {
+                ScopeStackOp::Push(scope) => scope.build_string().starts_with("meta.annotation."),
+                _ => false,
+            })
+            .count()
+    }
+
+    /// Log lines covering every level word in several spellings and
+    /// places, words that only contain one, quoted strings spanning
+    /// lines, URLs, addresses, dates and numbers.
+    const LEVELS_LOG: &str = include_str!("../tests/fixtures/levels.log");
+
+    #[test]
+    fn anchored_log_parses_like_the_shipped_syntax() {
+        // The `Ansi` theme colors none of the scopes the level lookaheads
+        // push, so the scope operations are compared, and the colors too.
+        let shipped = log_scope_ops(&SYNTAXES, LEVELS_LOG);
+        let anchored = log_scope_ops(&ANCHORED_LOG_SYNTAXES, LEVELS_LOG);
+        assert_eq!(shipped.len(), anchored.len());
+        for (number, (shipped, anchored)) in shipped.iter().zip(&anchored).enumerate() {
+            assert_eq!(shipped, anchored, "line {}", number + 1);
+        }
+        assert!(line_annotations(&anchored) > 0);
+        assert_eq!(line_annotations(&shipped), line_annotations(&anchored));
+
+        let colors = |syntaxes: &SyntaxSet| {
+            let log = syntaxes
+                .find_syntax_by_name(LOG_SYNTAX)
+                .expect("log is bundled");
+            highlight_code(LEVELS_LOG, syntaxes, log).expect("the fixture highlights")
+        };
+        assert_eq!(colors(&SYNTAXES), colors(&ANCHORED_LOG_SYNTAXES));
+    }
+
+    #[test]
+    fn anchored_lookaheads_still_find_the_level_of_a_line() {
+        let error_line = log_scope_ops(&ANCHORED_LOG_SYNTAXES, "worker 3 ERROR: disk full\n");
+        assert!(
+            error_line.iter().flatten().any(|(_, op)| matches!(
+                op,
+                ScopeStackOp::Push(scope)
+                    if scope.build_string() == "meta.annotation.error-line.log"
+            )),
+            "{error_line:?}"
+        );
+        let plain_line = log_scope_ops(&ANCHORED_LOG_SYNTAXES, "request served in 3 ms\n");
+        assert_eq!(line_annotations(&plain_line), 0, "{plain_line:?}");
     }
 
     #[test]

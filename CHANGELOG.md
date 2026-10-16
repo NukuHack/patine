@@ -27,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an HTML block under `Html::Drop` or an empty code block, follows the
   bullet on the next line without a blank line, as a quote or code
   block there does.
+- Highlighting a log (`log`) takes about a fifth of the time it took:
+  20,000 lines of an access log took 3.8 s and take 0.8 s, with the
+  same colors. Four patterns of the Log syntax that two-face ships took
+  time quadratic in the length of a line; patine anchors them in its
+  own copy of the syntax set. Building that copy costs 0.2 s and about
+  7 MB once, on the first log highlighted, with a passing peak of
+  66 MB.
 
 ## [1.7.0] - 2026-10-16
 

@@ -1,0 +1,135 @@
+ERROR at the start of the line 42
+2026-10-16T10:00:01+02:00 something ERROR in the middle
+a line that ends with ERROR
+error at the start of the line 42
+2026-10-16T10:00:01+02:00 something error in the middle
+a line that ends with error
+Error at the start of the line 42
+2026-10-16T10:00:01+02:00 something Error in the middle
+a line that ends with Error
+FAIL at the start of the line 42
+2026-10-16T10:00:01+02:00 something FAIL in the middle
+a line that ends with FAIL
+fail at the start of the line 42
+2026-10-16T10:00:01+02:00 something fail in the middle
+a line that ends with fail
+failure at the start of the line 42
+2026-10-16T10:00:01+02:00 something failure in the middle
+a line that ends with failure
+Failed at the start of the line 42
+2026-10-16T10:00:01+02:00 something Failed in the middle
+a line that ends with Failed
+exception at the start of the line 42
+2026-10-16T10:00:01+02:00 something exception in the middle
+a line that ends with exception
+Exception at the start of the line 42
+2026-10-16T10:00:01+02:00 something Exception in the middle
+a line that ends with Exception
+FATAL at the start of the line 42
+2026-10-16T10:00:01+02:00 something FATAL in the middle
+a line that ends with FATAL
+fatal at the start of the line 42
+2026-10-16T10:00:01+02:00 something fatal in the middle
+a line that ends with fatal
+critical at the start of the line 42
+2026-10-16T10:00:01+02:00 something critical in the middle
+a line that ends with critical
+CRITICAL at the start of the line 42
+2026-10-16T10:00:01+02:00 something CRITICAL in the middle
+a line that ends with CRITICAL
+WARN at the start of the line 42
+2026-10-16T10:00:01+02:00 something WARN in the middle
+a line that ends with WARN
+warn at the start of the line 42
+2026-10-16T10:00:01+02:00 something warn in the middle
+a line that ends with warn
+Warning at the start of the line 42
+2026-10-16T10:00:01+02:00 something Warning in the middle
+a line that ends with Warning
+WARNING at the start of the line 42
+2026-10-16T10:00:01+02:00 something WARNING in the middle
+a line that ends with WARNING
+INFO at the start of the line 42
+2026-10-16T10:00:01+02:00 something INFO in the middle
+a line that ends with INFO
+info at the start of the line 42
+2026-10-16T10:00:01+02:00 something info in the middle
+a line that ends with info
+Info at the start of the line 42
+2026-10-16T10:00:01+02:00 something Info in the middle
+a line that ends with Info
+DEBUG at the start of the line 42
+2026-10-16T10:00:01+02:00 something DEBUG in the middle
+a line that ends with DEBUG
+debug at the start of the line 42
+2026-10-16T10:00:01+02:00 something debug in the middle
+a line that ends with debug
+Debug at the start of the line 42
+2026-10-16T10:00:01+02:00 something Debug in the middle
+a line that ends with Debug
+INFO then WARN then ERROR then DEBUG on one line
+debug before error: DEBUG ERROR
+warning and info: Warning info
+words that contain levels: information debugger errors warnings failures infos
+prefixes and suffixes: xerror errorx _info info_ debug1 1debug
+msg="a quoted string with ERROR inside" and nothing after
+msg="a string that opens here and spans
+the next line" then WARN after the quote closes
+another="string opening on this line
+still inside the string ERROR
+closing here" and then info after it
+third="opens without a level word
+still WARN inside" and nothing after
+GET https://example.com/path/to/thing?query=1&x=%20 took 12 ms
+url in parens (http://host:8080/a_(b)) then error
+ipv4 192.168.10.255 and 10.0.0.1 with INFO
+ipv6 fe80::1ff:fe23:4567:890a and ::1 debug
+dates 2026-10-16 2026/10/16 and times 10:00:59 10:00:59.123
+datetime 2026-10-16T23:59:59.999+02:00 WARN
+numbers 0x1F 0xdead.beef 3.14 42 007
+key=value other='single quoted' third="double"
+
+   
+		tabs before a level: ERROR
+plain line without any level word at all
+request 0 served by worker-0 in 0 ms request 1 served by worker-1 in 1 ms request 2 served by worker-2 in 2 ms request 3 served by worker-3 in 3 ms request 4 served by worker-4 in 4 ms request 5 served by worker-5 in 5 ms request 6 served by worker-6 in 6 ms request 7 served by worker-7 in 7 ms request 8 served by worker-0 in 8 ms request 9 served by worker-1 in 9 ms request 10 served by worker-2 in 10 ms request 11 served by worker-3 in 11 ms request 12 served by worker-4 in 12 ms request 13 served by worker-5 in 13 ms request 14 served by worker-6 in 14 ms request 15 served by worker-7 in 15 ms request 16 served by worker-0 in 16 ms request 17 served by worker-1 in 17 ms request 18 served by worker-2 in 18 ms request 19 served by worker-3 in 19 ms request 20 served by worker-4 in 20 ms request 21 served by worker-5 in 21 ms request 22 served by worker-6 in 22 ms request 23 served by worker-7 in 23 ms request 24 served by worker-0 in 24 ms request 25 served by worker-1 in 25 ms request 26 served by worker-2 in 26 ms request 27 served by worker-3 in 27 ms request 28 served by worker-4 in 28 ms request 29 served by worker-5 in 29 ms request 30 served by worker-6 in 30 ms request 31 served by worker-7 in 31 ms request 32 served by worker-0 in 32 ms request 33 served by worker-1 in 33 ms request 34 served by worker-2 in 34 ms request 35 served by worker-3 in 35 ms request 36 served by worker-4 in 36 ms request 37 served by worker-5 in 37 ms request 38 served by worker-6 in 38 ms request 39 served by worker-7 in 39 ms request 40 served by worker-0 in 40 ms request 41 served by worker-1 in 41 ms request 42 served by worker-2 in 42 ms request 43 served by worker-3 in 43 ms request 44 served by worker-4 in 44 ms request 45 served by worker-5 in 45 ms request 46 served by worker-6 in 46 ms request 47 served by worker-7 in 47 ms request 48 served by worker-0 in 48 ms request 49 served by worker-1 in 49 ms request 50 served by worker-2 in 50 ms request 51 served by worker-3 i
+2026-10-16T10:00:01+02:00 INFO request 000001 served in 1 ms by worker-1
+2026-10-16T10:00:02+02:00 INFO request 000002 served in 2 ms by worker-2
+2026-10-16T10:00:03+02:00 INFO request 000003 served in 3 ms by worker-3
+2026-10-16T10:00:04+02:00 INFO request 000004 served in 4 ms by worker-4
+2026-10-16T10:00:05+02:00 INFO request 000005 served in 5 ms by worker-5
+2026-10-16T10:00:06+02:00 INFO request 000006 served in 6 ms by worker-6
+2026-10-16T10:00:07+02:00 INFO request 000007 served in 7 ms by worker-7
+2026-10-16T10:00:08+02:00 INFO request 000008 served in 8 ms by worker-0
+2026-10-16T10:00:09+02:00 INFO request 000009 served in 9 ms by worker-1
+2026-10-16T10:00:10+02:00 INFO request 000010 served in 10 ms by worker-2
+2026-10-16T10:00:11+02:00 INFO request 000011 served in 11 ms by worker-3
+2026-10-16T10:00:12+02:00 INFO request 000012 served in 12 ms by worker-4
+2026-10-16T10:00:13+02:00 INFO request 000013 served in 13 ms by worker-5
+2026-10-16T10:00:14+02:00 INFO request 000014 served in 14 ms by worker-6
+2026-10-16T10:00:15+02:00 INFO request 000015 served in 15 ms by worker-7
+2026-10-16T10:00:16+02:00 INFO request 000016 served in 16 ms by worker-0
+2026-10-16T10:00:17+02:00 INFO request 000017 served in 17 ms by worker-1
+2026-10-16T10:00:18+02:00 INFO request 000018 served in 18 ms by worker-2
+2026-10-16T10:00:19+02:00 INFO request 000019 served in 19 ms by worker-3
+2026-10-16T10:00:20+02:00 INFO request 000020 served in 20 ms by worker-4
+2026-10-16T10:00:21+02:00 INFO request 000021 served in 21 ms by worker-5
+2026-10-16T10:00:22+02:00 INFO request 000022 served in 22 ms by worker-6
+2026-10-16T10:00:23+02:00 INFO request 000023 served in 23 ms by worker-7
+2026-10-16T10:00:24+02:00 INFO request 000024 served in 24 ms by worker-0
+2026-10-16T10:00:25+02:00 INFO request 000025 served in 25 ms by worker-1
+2026-10-16T10:00:26+02:00 INFO request 000026 served in 26 ms by worker-2
+2026-10-16T10:00:27+02:00 INFO request 000027 served in 27 ms by worker-3
+2026-10-16T10:00:28+02:00 INFO request 000028 served in 28 ms by worker-4
+2026-10-16T10:00:29+02:00 INFO request 000029 served in 29 ms by worker-5
+2026-10-16T10:00:30+02:00 INFO request 000030 served in 30 ms by worker-6
+2026-10-16T10:00:31+02:00 INFO request 000031 served in 31 ms by worker-7
+2026-10-16T10:00:32+02:00 INFO request 000032 served in 32 ms by worker-0
+2026-10-16T10:00:33+02:00 INFO request 000033 served in 33 ms by worker-1
+2026-10-16T10:00:34+02:00 INFO request 000034 served in 34 ms by worker-2
+2026-10-16T10:00:35+02:00 INFO request 000035 served in 35 ms by worker-3
+2026-10-16T10:00:36+02:00 INFO request 000036 served in 36 ms by worker-4
+2026-10-16T10:00:37+02:00 INFO request 000037 served in 37 ms by worker-5
+2026-10-16T10:00:38+02:00 INFO request 000038 served in 38 ms by worker-6
+2026-10-16T10:00:39+02:00 INFO request 000039 served in 39 ms by worker-7
+2026-10-16T10:00:40+02:00 INFO request 000040 served in 40 ms by worker-0
