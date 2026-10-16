@@ -52,7 +52,6 @@ mod options;
 mod render;
 mod styled;
 mod table;
-mod wrap;
 
 use std::io::Write;
 

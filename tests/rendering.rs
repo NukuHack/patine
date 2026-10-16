@@ -233,6 +233,13 @@ fn single_long_word_no_break() {
 }
 
 #[test]
+fn wide_characters_wrap_by_display_width() {
+    // `日本語` is 6 columns wide in 9 bytes: it overflows a 4-column line
+    // on its own, and `ok` cannot join it.
+    assert_eq!(render_with_width("日本語 ok", 4), "日本語\nok\n");
+}
+
+#[test]
 fn wrap_preserves_bold() {
     // Bold text that spans across a line wrap should re-apply bold on the
     // new line.
@@ -1119,6 +1126,117 @@ fn cells_past_the_delimiter_row_render_unaligned() {
 }
 
 // =========================================================
+// Inline content in table cells
+// =========================================================
+
+// A cell is laid out as running text: it keeps the styles of its inline
+// content and wraps by the same rules. A header cell adds bold on top.
+
+/// The rows of a rendered table that hold cell text, in the canonical
+/// styled form of [`serialize`].
+fn styled_table_rows(markdown: &str, width: usize) -> Vec<String> {
+    serialize(&render_lines(markdown, width))
+        .lines()
+        .filter(|line| line.starts_with('│'))
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn table_cells_keep_their_inline_styles() {
+    let row = "| **b** | *i* | `c` | ~~s~~ |";
+    assert_eq!(
+        styled_table_rows(&format!("{row}\n|---|---|---|---|\n{row}"), 80),
+        [
+            "│ [bold]b[] │ [bold,italic]i[] │ [bold,yellow]c[] │ [bold,strike]s[] │",
+            "│ [bold]b[] │ [italic]i[] │ [yellow]c[] │ [strike]s[] │",
+        ]
+    );
+}
+
+#[test]
+fn link_in_a_table_cell_renders_as_in_running_text() {
+    let link = "[docs](https://x.org)";
+    let paragraph = render(link);
+    assert_eq!(paragraph, "[underline]docs[][dim] (https://x.org)[]\n");
+    assert_eq!(
+        styled_table_rows(&format!("| h |\n|---|\n| {link} |"), 80)[1],
+        format!("│ {} │", paragraph.trim_end())
+    );
+    // A link whose text is its URL gets no suffix, in a cell as anywhere.
+    assert_eq!(
+        styled_table_rows("| h |\n|---|\n| <https://x.org> |", 80)[1],
+        "│ [underline]https://x.org[] │"
+    );
+}
+
+#[test]
+fn image_in_a_table_cell_shows_its_marker() {
+    let image = "![alt](p.png)";
+    let paragraph = render(image);
+    assert_eq!(paragraph, "[image: alt][dim] (p.png)[]\n");
+    assert_eq!(
+        styled_table_rows(&format!("| h |\n|---|\n| {image} |"), 80)[1],
+        format!("│ {} │", paragraph.trim_end())
+    );
+}
+
+#[test]
+fn glued_pieces_in_a_cell_wrap_as_one_word() {
+    // Width 8 leaves 4 columns for the cell, the width of `bbcc`, which
+    // cannot break.
+    assert_eq!(
+        styled_table_rows("| hdr |\n|---|\n| aa **bb**cc |", 8),
+        ["│ [bold]hdr [] │", "│ aa   │", "│ [bold]bb[]cc │"]
+    );
+}
+
+#[test]
+fn link_url_in_a_narrow_cell_moves_to_its_own_line() {
+    // Width 19 leaves 15 columns for the cell, the width of the URL in
+    // its parentheses, so the URL goes under the link text. Its dim space
+    // stays behind: a line does not start with a space.
+    assert_eq!(
+        styled_table_rows("| h |\n|---|\n| [docs](https://x.org) |", 19)[1..],
+        [
+            "│ [underline]docs[]            │",
+            "│ [dim](https://x.org)[] │"
+        ]
+    );
+}
+
+#[test]
+fn styled_cell_aligns_by_display_width() {
+    assert_eq!(
+        styled_table_rows("| head |\n|--:|\n| *x* |", 80)[1],
+        "│    [italic]x[] │"
+    );
+}
+
+#[test]
+fn whitespace_runs_in_a_cell_do_not_widen_its_column() {
+    let expected = ["│ a b │ c │", "│ x   │ y │"];
+    assert_eq!(
+        table_rows("| a    b | c |\n|---|---|\n| x | y |", 80),
+        expected
+    );
+    // Inline HTML that is not drawn takes no room either.
+    assert_eq!(
+        table_rows("| a <b></b> b | c |\n|---|---|\n| x | y |", 80),
+        expected
+    );
+}
+
+#[test]
+fn wide_characters_in_a_cell_wrap_by_display_width() {
+    // Width 10 leaves 6 columns for the cell, the width of `日本語`.
+    assert_eq!(
+        table_rows("| h |\n|---|\n| 日本語 ok |", 10),
+        ["│   h    │", "│ 日本語 │", "│ ok     │"]
+    );
+}
+
+// =========================================================
 // Code blocks
 // =========================================================
 
@@ -1895,11 +2013,10 @@ fn effective_width_floored_thematic_break_not_empty() {
 
 #[test]
 fn very_narrow_width_zero_does_not_panic() {
-    // Width 0 should not panic; the `effective_width().max(1)` floor and
-    // `wrap_text`'s `width.max(1)` defensive clamp together should be
-    // enough. Whatever we produce is allowed to overflow — but the
-    // render call itself must succeed and produce non-empty output for
-    // non-empty input.
+    // Width 0 should not panic; the `effective_width().max(1)` floor
+    // should be enough. Whatever we produce is allowed to overflow — but
+    // the render call itself must succeed and produce non-empty output
+    // for non-empty input.
     let output = render_with_width("hello world", 0);
     assert!(!output.trim().is_empty(), "empty output at width 0");
     assert!(output.contains("hello"));

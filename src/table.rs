@@ -3,11 +3,8 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use markdown::mdast::{AlignKind, Node};
-use unicode_width::UnicodeWidthStr;
 
-use crate::options::Html;
 use crate::styled::{StyledLine, TextStyle};
-use crate::wrap;
 
 // =========================================================
 // Box-drawing characters
@@ -43,40 +40,25 @@ const HEADER_STYLE: TextStyle = TextStyle {
 const PER_CELL_OVERHEAD: usize = 3; // "│ " + trailing " "
 const TRAILING_BORDER: usize = 1; // final "│"
 
+/// A width no cell reaches: a cell laid out at it stays on one line.
+const UNLIMITED: usize = usize::MAX;
+
 // =========================================================
-// Cell text extraction
+// Cells
 // =========================================================
 
-/// Recursively extract the plain text content of an AST node, stripping
-/// all formatting markers. Inline HTML counts as text when `html` is
-/// [`Html::Literal`].
-fn extract_text(node: &Node, html: Html) -> String {
-    match node {
-        Node::Text(t) => t.value.clone(),
-        Node::InlineCode(c) => c.value.clone(),
-        Node::Html(h) if html == Html::Literal => h.value.clone(),
-        other => other
-            .children()
-            .map(|children| {
-                children
-                    .iter()
-                    .map(|child| extract_text(child, html))
-                    .collect::<String>()
-            })
-            .unwrap_or_default(),
-    }
+/// The inline content of each cell in a row.
+fn row_cells(row: &Node) -> Vec<&[Node]> {
+    row.children()
+        .into_iter()
+        .flatten()
+        .map(|cell| cell.children().map(Vec::as_slice).unwrap_or_default())
+        .collect()
 }
 
-/// Extract the plain text for each cell in a row.
-fn row_texts(row: &Node, html: Html) -> Vec<String> {
-    match row {
-        Node::TableRow(r) => r
-            .children
-            .iter()
-            .map(|cell| extract_text(cell, html))
-            .collect(),
-        _ => Vec::new(),
-    }
+/// Display width of the widest of `lines`, 0 for none.
+fn widest(lines: &[StyledLine]) -> usize {
+    lines.iter().map(StyledLine::width).max().unwrap_or(0)
 }
 
 // =========================================================
@@ -98,8 +80,10 @@ fn row_texts(row: &Node, html: Html) -> Vec<String> {
 /// expected to tolerate this, same as the long-URL-on-its-own-line
 /// behavior.
 ///
-/// Header cells are bold; everything else is unstyled. The caller lays
-/// its own context style over these spans.
+/// `render_cell` lays out the inline content of a cell as running text
+/// of the given width, so a cell keeps its inline styles and wraps where
+/// running text would. Header cells add bold on top of those styles. The
+/// caller lays its own context style over these spans.
 ///
 /// Layout rules:
 ///   - A column follows the alignment of its delimiter row (`:--` left,
@@ -112,20 +96,16 @@ fn row_texts(row: &Node, html: Html) -> Vec<String> {
 ///     rows.
 ///   - Column widths are sized to fit within `available_width` when
 ///     possible, shrinking proportionally toward each column's minimum
-///     (widest unbreakable token).
+///     (widest word that cannot break).
 ///
 /// An empty table (no rows) yields an empty `Vec`; the caller is
 /// expected to treat that as "nothing to render".
 pub fn layout_table(
     table: &markdown::mdast::Table,
     available_width: usize,
-    html: Html,
+    render_cell: impl Fn(&[Node], usize) -> Vec<StyledLine>,
 ) -> Vec<StyledLine> {
-    let rows: Vec<Vec<String>> = table
-        .children
-        .iter()
-        .map(|row| row_texts(row, html))
-        .collect();
+    let rows: Vec<Vec<&[Node]>> = table.children.iter().map(row_cells).collect();
     if rows.is_empty() {
         return Vec::new();
     }
@@ -136,26 +116,21 @@ pub fn layout_table(
     }
 
     // ── Measure per-column natural and minimum widths ───────────────────
-    // `natural`[i] = width of the widest cell in column i (what we'd
-    //                use if space were unlimited).
-    // `minimum`[i] = width of the widest single unbreakable token in any
-    //                cell in column i — the floor below which wrapping
-    //                cannot shrink the column without making a token
-    //                overflow. We additionally floor at 1 so that a
-    //                column of empty cells still has a visible, paddable
-    //                slot.
+    // `natural`[i] = width of the widest cell in column i laid out on one
+    //                line (what we'd use if space were unlimited).
+    // `minimum`[i] = width of the widest word in any cell in column i
+    //                that cannot break — the floor below which wrapping
+    //                cannot shrink the column without making a word
+    //                overflow. Laid out one column wide, a cell puts
+    //                every such word on a line of its own. We
+    //                additionally floor at 1 so that a column of empty
+    //                cells still has a visible, paddable slot.
     let mut natural: Vec<usize> = vec![0; num_cols];
     let mut minimum: Vec<usize> = vec![0; num_cols];
     for row in &rows {
         for (i, cell) in row.iter().enumerate() {
-            let w = UnicodeWidthStr::width(cell.as_str());
-            if w > natural[i] {
-                natural[i] = w;
-            }
-            let m = wrap::widest_word(cell);
-            if m > minimum[i] {
-                minimum[i] = m;
-            }
+            natural[i] = natural[i].max(widest(&render_cell(cell, UNLIMITED)));
+            minimum[i] = minimum[i].max(widest(&render_cell(cell, 1)));
         }
     }
     for m in &mut minimum {
@@ -177,16 +152,16 @@ pub fn layout_table(
     let col_widths = distribute_widths(&natural, &minimum, content_budget);
 
     // ── Wrap each cell to its allocated column width ────────────────────
-    // Each cell becomes a Vec<String> of wrapped lines. Row height is
-    // the max cell height; shorter cells are rendered blank on the
-    // extra lines so the whole row aligns vertically.
-    let wrapped_rows: Vec<Vec<Vec<String>>> = rows
+    // Each cell becomes its wrapped lines. Row height is the max cell
+    // height; shorter cells, and cells that draw nothing, are rendered
+    // blank on the extra lines so the whole row aligns vertically.
+    let wrapped_rows: Vec<Vec<Vec<StyledLine>>> = rows
         .iter()
         .map(|row| {
             (0..num_cols)
-                .map(|i| {
-                    let text: &str = row.get(i).map(String::as_str).unwrap_or("");
-                    wrap::wrap_text(text, col_widths[i])
+                .map(|i| match row.get(i) {
+                    Some(cell) => render_cell(cell, col_widths[i]),
+                    None => Vec::new(),
                 })
                 .collect()
         })
@@ -313,20 +288,21 @@ fn distribute_widths(natural: &[usize], minimum: &[usize], budget: usize) -> Vec
 /// Build a single visual line of a wrapped row. `wrapped[col]` is the
 /// list of wrapped lines for column `col`; `line_idx` is which of those
 /// wrapped lines we're emitting on this visual line. A cell that is
-/// shorter than the current row's height contributes an empty string
-/// on the overflow lines.
+/// shorter than the current row's height contributes an empty line on
+/// the overflow lines.
 ///
 /// `align` holds the alignment of each column from the delimiter row. A
 /// row may have more cells than the delimiter row has columns; those
 /// cells render as unaligned.
 fn row_line(
-    wrapped: &[Vec<String>],
+    wrapped: &[Vec<StyledLine>],
     line_idx: usize,
     col_widths: &[usize],
     is_header: bool,
     align: &[AlignKind],
 ) -> StyledLine {
     let plain = TextStyle::default();
+    let empty = StyledLine::default();
     let mut line = StyledLine::default();
 
     for (col, &width) in col_widths.iter().enumerate() {
@@ -335,13 +311,12 @@ fn row_line(
         line.push_str(VERTICAL, plain);
         line.push_str(" ", plain);
 
-        let cell_line: &str = wrapped[col].get(line_idx).map(String::as_str).unwrap_or("");
-        let cell_width = UnicodeWidthStr::width(cell_line);
-        // If a token overflowed its allotted width during wrapping,
-        // `cell_width` may be greater than `width`. In that case we
-        // produce zero padding — the row will be wider than `width`
-        // for this line, which is the overflow fallback.
-        let padding = width.saturating_sub(cell_width);
+        let cell_line = wrapped[col].get(line_idx).unwrap_or(&empty);
+        // If a word overflowed its allotted width during wrapping, the
+        // line may be wider than `width`. In that case we produce zero
+        // padding — the row will be wider than `width` for this line,
+        // which is the overflow fallback.
+        let padding = width.saturating_sub(cell_line.width());
 
         // A column without an alignment centers its header and puts its
         // data on the left. A centered cell gives the extra column of an
@@ -354,12 +329,19 @@ fn row_line(
             }
             (AlignKind::Left, _) | (AlignKind::None, false) => (0, padding),
         };
-        // The alignment padding of a header cell is part of its bold span.
-        let style = if is_header { HEADER_STYLE } else { plain };
-        line.push_str(
-            &format!("{:left_pad$}{cell_line}{:right_pad$}", "", ""),
-            style,
-        );
+        // A header cell is bold on top of its own styles, and its
+        // alignment padding is part of the bold.
+        let pad_style = if is_header { HEADER_STYLE } else { plain };
+        line.push_str(&" ".repeat(left_pad), pad_style);
+        for span in cell_line {
+            let style = if is_header {
+                span.style.patch(HEADER_STYLE)
+            } else {
+                span.style
+            };
+            line.push_str(&span.text, style);
+        }
+        line.push_str(&" ".repeat(right_pad), pad_style);
 
         // Trailing space of the cell's padding.
         line.push_str(" ", plain);

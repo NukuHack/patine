@@ -12,6 +12,8 @@ Amended by [7. Render options for soft breaks and HTML](0007-render-options-for-
 
 Amended by [10. Quote style option](0010-quote-style-option.md)
 
+Amended by [11. Table cells render as inline content](0011-table-cells-render-as-inline-content.md)
+
 ## Context
 
 ADR 0003 has the renderer write ANSI escape sequences straight into an

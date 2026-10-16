@@ -191,7 +191,15 @@ Tables use full Unicode box-drawing characters with single-line borders.
   without a colon has its header **centered** and its data
   **left-aligned**. Alignment applies per wrapped line when cell text
   wraps across multiple lines.
-- **Header row**: rendered **bold**.
+- **Header row**: rendered **bold**, on top of each cell's own inline
+  styles.
+- **Cell text**: inline formatting renders as in running text (see
+  Inline Formatting): bold, italic, strikethrough, inline code in its
+  color, links underlined with their dimmed `(url)`, images as
+  `[image: alt]` with their dimmed path. A cell wraps like running
+  text: a line breaks only at whitespace and in front of a `(url)`, so
+  glued pieces such as `**bold**,` stay together. A column is never
+  narrower than its widest such word.
 - **Data rows**: 1 space padding on each side.
 - **Separators**: horizontal rules between the header and every data row.
 - **Column width**: a three-tier algorithm. (1) If the natural cell
@@ -233,9 +241,6 @@ Box-drawing characters used:
 | Cross          | `┼`       |
 | Horizontal     | `─`       |
 | Vertical       | `│`       |
-
-Bold markers inside table cells (e.g., `**Blocker**`) are stripped and the
-text is rendered bold.
 
 ## Code Blocks (Fenced)
 
@@ -372,6 +377,7 @@ restrained use of color and styling.
 | Blockquote bar `│`  | Cyan                               |
 | Table borders       | Default                            |
 | Table header text   | Bold, centered unless aligned      |
+| Table cell text     | As in running text                 |
 | Image marker        | Default                            |
 | Image path/URL      | Dimmed                             |
 | Horizontal rule     | Default                            |

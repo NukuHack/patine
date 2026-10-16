@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Table cells keep their inline styles: bold, italic, strikethrough,
+  inline code and links render as in running text, and a header cell
+  adds bold on top. Cells used to render as plain text. A link in a
+  cell shows its dimmed `(url)` and an image its `[image: alt]` marker
+  with its path, as in running text, so a column of links is wider than
+  before; an image used to leave its cell empty. Cell text wraps like
+  running text: glued pieces such as `**bold**,` stay on one line, and
+  a `(url)` may move to the next line. A run of spaces in a cell, or
+  inline HTML that is not drawn, no longer widens its column.
+
 ## [1.7.0] - 2026-10-16
 
 ### Added

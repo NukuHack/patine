@@ -79,7 +79,7 @@ those citations change with it (`rg -i <ulid>` finds them).
 ## Components
 
 - `render`: the Markdown renderer, its wrapping and the library API
-  (`src/render.rs`, `src/wrap.rs`, `src/lib.rs`)
+  (`src/render.rs`, `src/lib.rs`)
 - `highlight`: syntax highlighting of code blocks (`src/highlight.rs`)
 - `table`: table layout (`src/table.rs`)
 - `cli`: the command line (`src/main.rs`)

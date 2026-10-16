@@ -70,6 +70,23 @@ enum Style {
 }
 
 // =========================================================
+// Inline content on its own
+// =========================================================
+
+/// Lay out inline content, such as the content of a table cell, as
+/// running text `width` columns wide. Content that draws nothing yields
+/// no lines.
+pub(crate) fn render_inline_lines(
+    children: &[Node],
+    width: usize,
+    options: RenderOptions,
+) -> Vec<StyledLine> {
+    let mut renderer = Renderer::new(width, options);
+    renderer.render_inline_content(children);
+    renderer.finish()
+}
+
+// =========================================================
 // Renderer
 // =========================================================
 
@@ -335,14 +352,20 @@ impl Renderer {
     fn render_table(&mut self, table: &markdown::mdast::Table) {
         self.ensure_block_spacing();
 
-        // The table module is pure: it lays out the table as a list of
-        // styled content lines (box-drawing characters, cell text, bold
-        // headers) without any per-line prefix. We walk the lines here so
-        // that each one receives the renderer's normal line prefix —
-        // nesting indent *and* blockquote bars — via `write_indent`, and
-        // the context style under its own.
+        // The table module lays out the table as a list of styled content
+        // lines (box-drawing characters, cell text, bold headers) without
+        // any per-line prefix. Each cell is laid out as running text by a
+        // renderer of its own, so it keeps its inline styles and wraps by
+        // the same rules. We walk the lines here so that each one receives
+        // the renderer's normal line prefix — nesting indent *and*
+        // blockquote bars — via `write_indent`, and the context style
+        // under its own.
         let base = self.current_style();
-        for line in crate::table::layout_table(table, self.effective_width(), self.options.html) {
+        let options = self.options;
+        let lines = crate::table::layout_table(table, self.effective_width(), |cell, width| {
+            render_inline_lines(cell, width, options)
+        });
+        for line in lines {
             self.write_indent();
             for span in &line.spans {
                 self.line.push_str(&span.text, base.patch(span.style));

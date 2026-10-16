@@ -40,7 +40,7 @@ epoch:
 ├───────┼──────────────────────────────────────┼──────────────┤
 │ Beta  │ Spock attending a quidditch match    │ Medium       │
 ├───────┼──────────────────────────────────────┼──────────────┤
-│ Gamma │ A TARDIS inside a Death Star reactor │ CRITICAL     │
+│ Gamma │ A TARDIS inside a Death Star reactor │ [bold]CRITICAL[]     │
 └───────┴──────────────────────────────────────┴──────────────┘
 
 See [underline]the full classification taxonomy[][dim] (https://example.invalid/icni/taxonomy)[] for

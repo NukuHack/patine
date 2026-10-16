@@ -5,5 +5,5 @@ expression: "render(\"| Level | Items |\\n|---|---|\\n| **Blocker** | Auth syste
 ┌─────────┬─────────────┐
 │ [bold] Level [] │ [bold]   Items   [] │
 ├─────────┼─────────────┤
-│ Blocker │ Auth system │
+│ [bold]Blocker[] │ Auth system │
 └─────────┴─────────────┘
