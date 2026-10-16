@@ -58,7 +58,7 @@ use std::io::Write;
 
 use anyhow::Result;
 
-pub use crate::options::{Html, RenderOptions, SoftBreaks};
+pub use crate::options::{Html, QuoteStyle, RenderOptions, SoftBreaks};
 pub use crate::styled::{AnsiColor, StyledLine, StyledSpan, TextStyle, Underline};
 
 /// Parse and render a Markdown string as styled terminal output, wrapping
@@ -120,8 +120,10 @@ pub fn render_with(
 ///
 /// Text wraps at `width`. Lines may still be wider: words and URLs
 /// longer than the width stay whole, code blocks and frontmatter never
-/// wrap, and a table whose columns cannot shrink any further overflows. Line prefixes are spans of their own: indents are unstyled
-/// spaces and blockquote bars are dim `│ ` spans. Blank lines have no
+/// wrap, and a table whose columns cannot shrink any further overflows.
+/// Line prefixes are spans of their own: indents are unstyled spaces and
+/// blockquote bars are `│ ` spans in the style
+/// [`RenderOptions::quote_style`] asks for. Blank lines have no
 /// spans, and empty input yields no lines.
 ///
 /// A code block whose language syntect fails to highlight is shown in the

@@ -8,8 +8,8 @@
 
 use insta::assert_snapshot;
 use patine::{
-    AnsiColor, Html, RenderOptions, SoftBreaks, StyledLine, TextStyle, Underline, render_lines,
-    render_lines_with,
+    AnsiColor, Html, QuoteStyle, RenderOptions, SoftBreaks, StyledLine, TextStyle, Underline,
+    render_lines, render_lines_with,
 };
 
 /// Render markdown at 80 columns into the canonical text form used by the
@@ -1171,8 +1171,8 @@ fn code_block_preserves_multiline_string_state() {
 #[test]
 fn highlighted_code_block_in_blockquote() {
     // Blockquote `│ ` bar prefix + per-token highlighting must
-    // coexist — the bars stay dim on every line and the tokens
-    // stay highlighted per-token.
+    // coexist: the bars keep their own style on every line and the
+    // tokens stay highlighted per-token.
     assert_snapshot!(render(
         "> Some intro text.\n>\n> ```rust\n> let x = 1;\n> ```"
     ));
@@ -2144,35 +2144,66 @@ fn wrapped_continuation_indent_is_unstyled() {
     }
 }
 
-#[test]
-fn blockquote_bars_are_dim_only() {
-    // The `│` bars are dim whatever the quoted content looks like,
-    // including on the wrapped lines of a heading inside the quote.
-    let lines = render_lines(
-        "> quoted *text*\n>\n> ## A heading that wraps\n>\n> > nested",
-        16,
-    );
-    for line in &lines {
-        let bars: Vec<(char, TextStyle)> = styled_chars(line)
+/// The style of every bar character at the start of each line of
+/// `markdown`, which must all lie inside a quote.
+fn bar_styles(lines: &[StyledLine]) -> Vec<(char, TextStyle)> {
+    let mut bars = Vec::new();
+    for line in lines {
+        let prefix: Vec<(char, TextStyle)> = styled_chars(line)
             .into_iter()
             .take_while(|&(c, _)| c == '│' || c == ' ')
             .collect();
-        assert!(!bars.is_empty(), "line {line} lacks a bar");
-        for (c, style) in bars {
-            assert_eq!(
-                style,
-                dim(),
-                "bar prefix character {c:?} of {line}\nfull:\n{}",
-                serialize(&lines)
-            );
-        }
+        assert!(!prefix.is_empty(), "line {line} lacks a bar");
+        bars.extend(prefix);
+    }
+    bars
+}
+
+/// A quote with emphasis, a wrapping heading, a blank separator line and
+/// a nested quote: every place a bar is drawn.
+const QUOTE_WITH_EVERY_BAR: &str = "> quoted *text*\n>\n> ## A heading that wraps\n>\n> > nested";
+
+#[test]
+fn blockquote_bars_are_cyan_only() {
+    // The bars are cyan whatever the quoted content looks like, including
+    // on the wrapped lines of a heading inside the quote.
+    let lines = render_lines(QUOTE_WITH_EVERY_BAR, 16);
+    let mut cyan = TextStyle::default();
+    cyan.foreground = Some(AnsiColor::Cyan);
+    for (c, style) in bar_styles(&lines) {
+        assert_eq!(style, cyan, "{c:?}\nfull:\n{}", serialize(&lines));
     }
 }
 
 #[test]
-fn table_in_blockquote_is_dim_and_italic_throughout() {
-    // A table inside a quote takes on the quote's dim italic text, on
-    // every row and on both sides of a bold header cell.
+fn quote_bars_take_the_color_of_the_option() {
+    let options = RenderOptions::new().with_quote_style(QuoteStyle::Bar(AnsiColor::Blue));
+    let lines = render_lines_with(QUOTE_WITH_EVERY_BAR, 16, &options);
+    let mut blue = TextStyle::default();
+    blue.foreground = Some(AnsiColor::Blue);
+    for (c, style) in bar_styles(&lines) {
+        assert_eq!(style, blue, "{c:?}\nfull:\n{}", serialize(&lines));
+    }
+}
+
+#[test]
+fn dim_bar_quote_style_draws_dim_bars_and_upright_text() {
+    let options = RenderOptions::new().with_quote_style(QuoteStyle::DimBar);
+    let lines = render_lines_with(QUOTE_WITH_EVERY_BAR, 16, &options);
+    for (c, style) in bar_styles(&lines) {
+        assert_eq!(style, dim(), "{c:?}\nfull:\n{}", serialize(&lines));
+    }
+    assert_eq!(serialize(&lines[..1]), "[dim]│ []quoted [italic]text[]\n");
+}
+
+#[test]
+fn emphasis_stays_visible_inside_a_quote() {
+    assert_eq!(render("> a *b* c"), "[cyan]│ []a [italic]b[] c\n");
+}
+
+#[test]
+fn table_in_a_quote_keeps_its_own_style() {
+    // Only the header text is bold; borders and cells are plain.
     let lines = render_lines(
         "> | col1 | col2 |\n> |------|------|\n> | a    | b    |",
         80,
@@ -2180,21 +2211,27 @@ fn table_in_blockquote_is_dim_and_italic_throughout() {
     assert_eq!(lines.len(), 5, "full:\n{}", serialize(&lines));
     for line in &lines {
         let chars = styled_chars(line);
-        let (bar, table) = chars.split_at(2);
-        assert!(bar.iter().all(|&(_, style)| style == dim()));
+        let (_, table) = chars.split_at(2);
         let in_header_row = line.to_string().contains("col");
         for &(c, style) in table {
-            assert!(
-                style.dim && style.italic,
-                "{c:?} in {line} is not dim italic\nfull:\n{}",
+            let mut expected = TextStyle::default();
+            expected.bold = in_header_row && c.is_alphanumeric();
+            assert_eq!(
+                style,
+                expected,
+                "{c:?} in {line}\nfull:\n{}",
                 serialize(&lines)
             );
-            assert_eq!(
-                style.bold,
-                in_header_row && c.is_alphanumeric(),
-                "{c:?} in {line}"
-            );
         }
+    }
+}
+
+#[test]
+fn code_in_a_quote_keeps_its_own_style() {
+    let lines = render_lines("> ```rust\n> let x = 1;\n> ```", 80);
+    assert_eq!(lines.len(), 1);
+    for (c, style) in styled_chars(&lines[0]).into_iter().skip(2) {
+        assert!(!style.dim && !style.italic, "{c:?} is dim or italic");
     }
 }
 

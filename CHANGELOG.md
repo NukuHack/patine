@@ -9,9 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `RenderOptions::quote_style` and `with_quote_style` choose how block
+  quotes look: `QuoteStyle::Bar(color)` draws the `│` bar in a palette
+  color (the default is cyan), `QuoteStyle::DimBar` draws it dim without
+  a color.
 - Table columns follow the alignment of the delimiter row (`:--`,
   `:-:`, `--:`), header and data cells alike. A column without
   alignment keeps its centered header and left-aligned data.
+
+### Changed
+
+- Block quote text renders upright in its normal style instead of dim
+  and italic, so emphasis shows inside a quote, and the `│` bar is cyan
+  instead of dim. Tables, code blocks and HTML blocks in a quote keep
+  their own styles.
 
 ### Fixed
 

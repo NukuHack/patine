@@ -2,7 +2,7 @@
 source: tests/rendering.rs
 expression: "render(\"> a quote\\n\\n| col |\\n|---|\\n| val |\")"
 ---
-[dim]│ [][dim,italic]a quote[]
+[cyan]│ []a quote
 
 ┌─────┐
 │ [bold]col[] │

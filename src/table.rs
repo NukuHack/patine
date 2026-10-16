@@ -99,7 +99,7 @@ fn row_texts(row: &Node, html: Html) -> Vec<String> {
 /// behavior.
 ///
 /// Header cells are bold; everything else is unstyled. The caller lays
-/// its own context style (a blockquote's dim italic) over these spans.
+/// its own context style over these spans.
 ///
 /// Layout rules:
 ///   - A column follows the alignment of its delimiter row (`:--` left,

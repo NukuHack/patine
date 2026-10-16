@@ -4,4 +4,4 @@ expression: "render_with_options(\"**a <b>bold</b> tag**, [a <i>link</i>](https:
 ---
 [bold]a <b>bold</b> tag[], [underline]a <i>link</i>[][dim] (https://example.com)[]
 
-[dim]│ [][dim,italic]quoted <span>[]
+[cyan]│ []quoted <span>

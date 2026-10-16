@@ -2,8 +2,8 @@
 source: tests/rendering.rs
 expression: "render(\"> | col1 | col2 |\\n> |------|------|\\n> | a    | b    |\")"
 ---
-[dim]│ [][dim,italic]┌──────┬──────┐[]
-[dim]│ [][dim,italic]│ [][bold,dim,italic]col1[][dim,italic] │ [][bold,dim,italic]col2[][dim,italic] │[]
-[dim]│ [][dim,italic]├──────┼──────┤[]
-[dim]│ [][dim,italic]│ a    │ b    │[]
-[dim]│ [][dim,italic]└──────┴──────┘[]
+[cyan]│ []┌──────┬──────┐
+[cyan]│ []│ [bold]col1[] │ [bold]col2[] │
+[cyan]│ []├──────┼──────┤
+[cyan]│ []│ a    │ b    │
+[cyan]│ []└──────┴──────┘

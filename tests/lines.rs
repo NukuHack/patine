@@ -82,19 +82,13 @@ fn inline_styles_become_separate_spans() {
 }
 
 #[test]
-fn blockquote_bars_are_dim_spans_before_the_quoted_text() {
+fn blockquote_bars_are_cyan_spans_before_upright_text() {
     let lines = render_lines("> quoted", 80);
     assert_eq!(
         lines[0].spans,
         [
-            StyledSpan::new("│ ", style(|s| s.dim = true)),
-            StyledSpan::new(
-                "quoted",
-                style(|s| {
-                    s.dim = true;
-                    s.italic = true;
-                })
-            ),
+            StyledSpan::new("│ ", style(|s| s.foreground = Some(AnsiColor::Cyan))),
+            StyledSpan::new("quoted", TextStyle::default()),
         ]
     );
 }

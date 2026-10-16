@@ -10,6 +10,8 @@ Amends [6. Render to style-neutral lines](0006-render-to-style-neutral-lines.md)
 
 Amended by [8. Glued inline elements wrap as one word](0008-glued-inline-elements-wrap-as-one-word.md)
 
+Amended by [10. Quote style option](0010-quote-style-option.md)
+
 ## Context
 
 asqr renders the intro, the question texts and the option descriptions

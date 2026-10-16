@@ -47,7 +47,7 @@ patine --width 100 README.md
 - **Images**: `[image: alt text]` with the path/URL dimmed
 - **Lists**: ordered and unordered, with arbitrary nesting
 - **Tables**: Unicode box-drawing borders, bold headers, column alignment from the delimiter row, row separators
-- **Blockquotes**: `│` bar prefix, dimmed italic text, nested support
+- **Blockquotes**: `│` bar prefix in cyan, text in its normal style, nested support
 - **Horizontal rules**: `─` spanning the terminal width
 - **Word wrapping**: at terminal width (overridable with `--width`)
 
@@ -87,10 +87,11 @@ for line in &lines {
 }
 ```
 
-`patine::render_lines_with` and `patine::render_with` take `RenderOptions` for text that is not a Markdown document, such as a description a program wrote into a JSON string. Two options change what the defaults do:
+`patine::render_lines_with` and `patine::render_with` take `RenderOptions`. Two of them suit text that is not a Markdown document, such as a description a program wrote into a JSON string, and one suits a program with colors of its own:
 
 - `soft_breaks`: with `SoftBreaks::Join` (the default), a single newline inside running text joins the lines into one paragraph, as CommonMark specifies. With `SoftBreaks::Break`, it breaks the line the way a trailing backslash does, as GitHub comments show it. Code blocks, inline code and frontmatter are not affected.
 - `html`: with `Html::Drop` (the default), raw HTML is left out, so `Vec<String>` renders as `Vec`. With `Html::Literal`, it shows as written: inline HTML in the style of the text around it, an HTML block line by line and unwrapped. Autolinks such as `<https://example.com>` are links either way.
+- `quote_style`: with `QuoteStyle::Bar(AnsiColor::Cyan)` (the default), the `│` bar of a quote is drawn in that palette color. `QuoteStyle::DimBar` draws it dim without a color, for an interface that shows no colors. The quoted text keeps its normal style either way.
 
 ```rust
 use patine::{Html, RenderOptions, SoftBreaks};

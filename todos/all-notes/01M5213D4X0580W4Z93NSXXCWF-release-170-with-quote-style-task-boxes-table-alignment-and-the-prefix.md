@@ -31,5 +31,4 @@ and `Cargo.lock`; tag `v1.7.0`; push `main` and the tag, which starts
 
 ## Relations
 
-- Depends on: [Make blockquote text readable instead of dim italic](01M51XEQT0VC4P846QA3XBAM0R-make-blockquote-text-readable-instead-of-dim-italic.md)
 - Depends on: [Show the checkbox of a task list item](01M51XEQTSQAXS3NAN4N0X6NBF-show-the-checkbox-of-a-task-list-item.md)

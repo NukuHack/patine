@@ -2,6 +2,6 @@
 source: tests/rendering.rs
 expression: "render(\"> First paragraph.\\n>\\n> Second paragraph.\")"
 ---
-[dim]│ [][dim,italic]First paragraph.[]
-[dim]│ []
-[dim]│ [][dim,italic]Second paragraph.[]
+[cyan]│ []First paragraph.
+[cyan]│ []
+[cyan]│ []Second paragraph.

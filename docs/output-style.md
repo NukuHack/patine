@@ -258,8 +258,11 @@ identifier is required for highlighting.
 
 ## Blockquotes
 
-Blockquote markers (`>`) are stripped. A thin vertical bar `│` is drawn on
-the left, with the text rendered in dimmed/italic style.
+Blockquote markers (`>`) are stripped. A thin vertical bar `│` is drawn
+on the left in cyan. The text keeps its normal style, so emphasis, bold
+and inline code look as they do outside a quote. Programs using the
+library can choose another bar color, or a dim bar without a color,
+through `RenderOptions::quote_style`.
 
 ```
 │ This is a blockquoted paragraph. It wraps at the terminal
@@ -342,8 +345,8 @@ restrained use of color and styling.
 | Code blocks (unknown/no lang) | Distinct color (same as inline)    |
 | Link text           | Underlined                         |
 | Link URL            | Dimmed                             |
-| Blockquote text     | Dimmed, italic                     |
-| Blockquote bar `│`  | Dimmed                             |
+| Blockquote text     | Default                            |
+| Blockquote bar `│`  | Cyan                               |
 | Table borders       | Default                            |
 | Table header text   | Bold, centered unless aligned      |
 | Image marker        | Default                            |

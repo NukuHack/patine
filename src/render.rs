@@ -6,7 +6,7 @@ use markdown::mdast::Node;
 use unicode_width::UnicodeWidthStr;
 
 use crate::line_endings::{split_line_endings, verbatim_lines};
-use crate::options::{Html, RenderOptions, SoftBreaks};
+use crate::options::{Html, QuoteStyle, RenderOptions, SoftBreaks};
 use crate::styled::{AnsiColor, StyledLine, TextStyle, Underline};
 
 /// Columns of indent for one level of nesting: a code block, or a block
@@ -18,16 +18,6 @@ const CODE_COLOR: AnsiColor = AnsiColor::Yellow;
 
 /// Prefix for each blockquote nesting level.
 const BLOCKQUOTE_BAR: &str = "│ ";
-
-/// Blockquote bars are dim whatever the quoted content looks like.
-const BAR_STYLE: TextStyle = TextStyle {
-    bold: false,
-    italic: false,
-    dim: true,
-    strikethrough: false,
-    underline: Underline::None,
-    foreground: None,
-};
 
 // =========================================================
 // Line prefix
@@ -316,8 +306,8 @@ impl Renderer {
     }
 
     /// Syntax-highlighted code block rendering. Each token keeps the
-    /// surrounding context style (a blockquote's dim italic) and adds its
-    /// own color, bold and italic on top.
+    /// surrounding context style and adds its own color, bold and italic
+    /// on top.
     fn render_code_block_highlighted(&mut self, lines: &[StyledLine]) {
         let base = self.current_style();
         for line in lines {
@@ -341,7 +331,7 @@ impl Renderer {
         // headers) without any per-line prefix. We walk the lines here so
         // that each one receives the renderer's normal line prefix —
         // nesting indent *and* blockquote bars — via `write_indent`, and
-        // the context style (a blockquote's dim italic) under its own.
+        // the context style under its own.
         let base = self.current_style();
         for line in crate::table::layout_table(table, self.effective_width(), self.options.html) {
             self.write_indent();
@@ -364,12 +354,10 @@ impl Renderer {
         // prefix, which visually belongs inside the blockquote, not between
         // the preceding block and the blockquote.
         self.ensure_block_spacing();
+        // The quoted text keeps the style around it; only the bars mark
+        // the quote.
         self.with_segment(Segment::Quote, |renderer| {
-            renderer.push_style(Style::Dim);
-            renderer.push_style(Style::Italic);
             renderer.render_children(children);
-            renderer.pop_style();
-            renderer.pop_style();
         });
     }
 
@@ -865,7 +853,7 @@ impl Renderer {
                     wrote = true;
                 }
                 Segment::Quote => {
-                    self.line.push_str(BLOCKQUOTE_BAR, BAR_STYLE);
+                    self.line.push_str(BLOCKQUOTE_BAR, self.bar_style());
                     wrote = true;
                 }
                 Segment::Item { .. } => {}
@@ -879,6 +867,17 @@ impl Renderer {
             self.at_start = false;
             self.pending_space = None;
         }
+    }
+
+    /// The style of a blockquote bar, whatever the quoted content looks
+    /// like.
+    fn bar_style(&self) -> TextStyle {
+        let mut style = TextStyle::default();
+        match self.options.quote_style {
+            QuoteStyle::Bar(color) => style.foreground = Some(color),
+            QuoteStyle::DimBar => style.dim = true,
+        }
+        style
     }
 
     /// Write the spaces that align a wrapped or follow-up line of a list

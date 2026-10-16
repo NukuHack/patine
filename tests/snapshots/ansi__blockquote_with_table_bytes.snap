@@ -2,10 +2,10 @@
 source: tests/ansi.rs
 expression: "tagged(&render_raw(\"> quote\\n>\\n> | col1 | col2 |\\n> |------|------|\\n> | a    | b    |\",\n80))"
 ---
-[dim]│ [/intensity][dim][italic]quote[/italic][/intensity]
-[dim]│ [/intensity]
-[dim]│ [/intensity][dim][italic]┌──────┬──────┐[/italic][/intensity]
-[dim]│ [/intensity][dim][italic]│ [/italic][/intensity][bold][dim][italic]col1[/italic][/intensity][dim][italic] │ [/italic][/intensity][bold][dim][italic]col2[/italic][/intensity][dim][italic] │[/italic][/intensity]
-[dim]│ [/intensity][dim][italic]├──────┼──────┤[/italic][/intensity]
-[dim]│ [/intensity][dim][italic]│ a    │ b    │[/italic][/intensity]
-[dim]│ [/intensity][dim][italic]└──────┴──────┘[/italic][/intensity]
+[fg6]│ [/color]quote
+[fg6]│ [/color]
+[fg6]│ [/color]┌──────┬──────┐
+[fg6]│ [/color]│ [bold]col1[/intensity] │ [bold]col2[/intensity] │
+[fg6]│ [/color]├──────┼──────┤
+[fg6]│ [/color]│ a    │ b    │
+[fg6]│ [/color]└──────┴──────┘

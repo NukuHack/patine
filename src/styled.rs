@@ -141,8 +141,7 @@ pub struct TextStyle {
 impl TextStyle {
     /// This style with every attribute that `top` sets laid over it.
     /// Attributes `top` leaves unset keep their value from `self`, so an
-    /// outer context (a blockquote's dim italic) survives inside an
-    /// inner one (a bold table header).
+    /// outer context survives inside an inner one (a bold table header).
     pub(crate) fn patch(self, top: TextStyle) -> TextStyle {
         TextStyle {
             bold: self.bold || top.bold,

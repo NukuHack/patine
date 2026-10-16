@@ -2,9 +2,9 @@
 source: tests/rendering.rs
 expression: "render_with_options(\"> <div>\\n> quoted\\n> </div>\\n\\n- item\\n\\n  <div>\\n  nested\\n  </div>\",\n80, LITERAL)"
 ---
-[dim]│ [][dim,italic]<div>[]
-[dim]│ [][dim,italic]quoted[]
-[dim]│ [][dim,italic]</div>[]
+[cyan]│ []<div>
+[cyan]│ []quoted
+[cyan]│ []</div>
 
 • item
 
