@@ -2,7 +2,6 @@
 title: "Make blockquote text readable instead of dim italic"
 kind: improvement
 component: render
-status: blocked
 origin: request
 tags: [field-test]
 ---
@@ -34,9 +33,3 @@ style.
 - A prototype with renders is in
   `~/playground/2026_10_15_asqr-maskottchen/vorbereitung/patine-prototype.diff`
   (switch `PROTO_QUOTE`) and `patine-png/`.
-- Build after the prefix-stack rework (see Relations), which touches
-  `write_indent` and the `Quote` segment.
-
-## Relations
-
-- Depends on: [Compose the line prefix from a stack of nested blocks](01M4YA25APXNYS8AM32RCMWRMY-compose-the-line-prefix-from-a-stack-of-nested-blocks.md)

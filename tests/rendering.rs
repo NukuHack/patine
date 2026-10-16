@@ -1381,7 +1381,7 @@ fn block_first_in_an_item_starts_right_under_the_bullet() {
     );
     assert_eq!(plain_lines("- # Heading", 80), ["• ", "  Heading"]);
     assert_eq!(plain_lines("10. # Heading", 80), ["10. ", "  Heading"]);
-    assert_eq!(plain_lines("> - > quote", 80), ["│ • ", "  │ │ quote"]);
+    assert_eq!(plain_lines("> - > quote", 80), ["│ • ", "│   │ quote"]);
 }
 
 #[test]
@@ -1406,6 +1406,121 @@ fn empty_block_first_in_an_item_keeps_spacing_after_the_list() {
     // A block that draws nothing still leaves the bullet as output above
     // the next block, which then gets its blank line.
     assert_eq!(plain_lines("- >\n\npara", 80), ["• ", "", "para"]);
+}
+
+// =========================================================
+// Prefix of nested blocks
+// =========================================================
+
+// A line's prefix lists the blocks around it from the outside in: a
+// quote's bar, a list item's indent, a code block's indent, in the order
+// the blocks were entered.
+
+#[test]
+fn code_block_in_a_nested_item_sits_past_both_indents() {
+    assert_eq!(
+        plain_lines("- a\n  - b\n\n    ```\n    code\n    ```", 80),
+        ["• a", "  • b", "", "      code"]
+    );
+}
+
+#[test]
+fn item_in_two_quotes_wraps_inside_both_bars() {
+    assert_eq!(
+        plain_lines("> > - aaaa bbbb cccc", 14),
+        ["│ │ • aaaa", "│ │   bbbb", "│ │   cccc"]
+    );
+}
+
+#[test]
+fn table_in_an_item_in_a_quote_reaches_the_width() {
+    let lines = plain_lines("> - x\n>\n>   | aaaa bbbb cccc dddd eeee |\n>   |---|", 20);
+    let table = lines
+        .iter()
+        .skip_while(|line| !line.contains('┌'))
+        .collect::<Vec<_>>();
+    assert!(!table.is_empty(), "{lines:#?}");
+    for line in table {
+        assert_eq!(line.chars().count(), 20, "{lines:#?}");
+    }
+}
+
+#[test]
+fn block_after_a_break_that_drew_nothing_starts_on_its_own_line() {
+    // The first paragraph draws nothing but breaks its line, which leaves
+    // a line holding only the continuation indent. The quote starts on
+    // the line after it, not appended to it.
+    assert_eq!(
+        plain_lines("- <b></b>\\\n  <i></i>\n\n  > q", 80),
+        ["• ", "  ", "  │ q"]
+    );
+}
+
+#[test]
+fn code_block_in_a_quote_sits_inside_the_bar() {
+    // Every line of the block carries the whole prefix, the empty one too.
+    assert_eq!(
+        plain_lines("> ```\n> code\n>\n> x\n> ```", 80),
+        ["│   code", "│   ", "│   x"]
+    );
+}
+
+#[test]
+fn nested_list_in_a_quote_sits_inside_the_bar() {
+    assert_eq!(
+        plain_lines("> - a\n>   - aaaa bbbb cccc", 14),
+        ["│ • a", "│   • aaaa", "│     bbbb", "│     cccc"]
+    );
+}
+
+#[test]
+fn blocks_in_an_item_in_a_quote_sit_inside_the_bar() {
+    assert_eq!(
+        plain_lines("> - aaa\n>\n>   ```\n>   code\n>   ```", 40),
+        ["│ • aaa", "│ ", "│     code"]
+    );
+    assert_eq!(plain_lines("> - # heading", 40), ["│ • ", "│   heading"]);
+    assert_eq!(plain_lines("> > - > x", 40), ["│ │ • ", "│ │   │ x"]);
+    let rule = plain_lines("> - x\n>\n>   ***", 20);
+    assert_eq!(rule[2], format!("│   {}", "─".repeat(16)));
+}
+
+#[test]
+fn blank_line_in_an_item_in_a_quote_ends_at_the_bar() {
+    assert_eq!(
+        plain_lines("> - a\n>\n>   > q", 40),
+        ["│ • a", "│ ", "│   │ q"]
+    );
+}
+
+#[test]
+fn prefix_spans_follow_the_nesting_order() {
+    // The bars keep their own style wherever they sit, and the indent
+    // between them is unstyled.
+    let lines = render_lines("> - > quote", 80);
+    let bar = styled_chars(&lines[0])[0].1;
+    let prefix: Vec<(char, TextStyle)> = styled_chars(&lines[1])[..6].to_vec();
+    assert_eq!(
+        prefix,
+        [
+            ('│', bar),
+            (' ', bar),
+            (' ', TextStyle::default()),
+            (' ', TextStyle::default()),
+            ('│', bar),
+            (' ', bar),
+        ],
+        "{}",
+        serialize(&lines)
+    );
+}
+
+#[test]
+fn block_after_a_first_block_that_drew_nothing_starts_under_the_bullet() {
+    // A block that draws nothing leaves the bullet alone on its line, so
+    // the next block follows it as if it came first.
+    assert_eq!(plain_lines("- <div>\n\n  > q", 80), ["• ", "  │ q"]);
+    assert_eq!(plain_lines("- ```\n  ```\n\n  > q", 80), ["• ", "  │ q"]);
 }
 
 // =========================================================

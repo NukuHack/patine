@@ -4,4 +4,4 @@ expression: "render(\"> Some intro text.\\n>\\n> ```rust\\n> let x = 1;\\n> ```\
 ---
 [dim]│ [][dim,italic]Some intro text.[]
 [dim]│ []
-  [dim]│ [][dim,italic,magenta]let[][dim,italic] x [][dim,italic,magenta]=[][dim,italic] [][dim,italic,yellow]1[][dim,italic];[]
+[dim]│ []  [dim,italic,magenta]let[][dim,italic] x [][dim,italic,magenta]=[][dim,italic] [][dim,italic,yellow]1[][dim,italic];[]

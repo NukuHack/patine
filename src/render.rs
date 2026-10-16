@@ -9,18 +9,9 @@ use crate::line_endings::{split_line_endings, verbatim_lines};
 use crate::options::{Html, RenderOptions, SoftBreaks};
 use crate::styled::{AnsiColor, StyledLine, TextStyle, Underline};
 
-/// Indentation unit used for nesting (lists, code blocks, etc.).
-const NEST_INDENT: &str = "  ";
-
-/// Width of one nesting indent level in columns. Uses `len()` (byte count)
-/// rather than `UnicodeWidthStr::width()` because the latter is not `const`.
-/// The compile-time assertion below ensures the indent stays ASCII, where
-/// byte count and display width are identical.
-const NEST_INDENT_WIDTH: usize = NEST_INDENT.len();
-const _: () = assert!(
-    NEST_INDENT.is_ascii(),
-    "NEST_INDENT must be ASCII so that len() equals display width"
-);
+/// Columns of indent for one level of nesting: a code block, or a block
+/// nested in a list item.
+const NEST_INDENT_WIDTH: usize = 2;
 
 /// Foreground color used for inline code and code blocks.
 const CODE_COLOR: AnsiColor = AnsiColor::Yellow;
@@ -37,6 +28,30 @@ const BAR_STYLE: TextStyle = TextStyle {
     underline: Underline::None,
     foreground: None,
 };
+
+// =========================================================
+// Line prefix
+// =========================================================
+
+/// One level of the line prefix. The renderer keeps them in the order the
+/// blocks were entered, which is the order they appear on a line: a code
+/// block in a quote sits inside the bar, a quote in a list item after the
+/// item's indent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Segment {
+    /// Unstyled indent of this many columns: a code block's own indent,
+    /// or the indent of a block nested in a list item.
+    Nest(usize),
+    /// A blockquote's `│ ` bar.
+    Quote,
+    /// A list item. It adds nothing to the prefix: its bullet is drawn
+    /// once, and the blocks nested in it push a `Nest` of their own.
+    /// While it is the innermost segment, wrapped lines start `hang`
+    /// columns in, past the bullet. `bare` holds until anything is drawn
+    /// after the bullet, so a block can follow a bullet that stands alone
+    /// without a blank line.
+    Item { hang: usize, bare: bool },
+}
 
 // =========================================================
 // Style tracking
@@ -128,17 +143,10 @@ pub struct Renderer {
     /// styled from the whole stack (see `current_style`).
     style_stack: Vec<Style>,
 
-    /// Extra indentation depth (in units of 2 spaces) for nested structures
-    /// like lists and blockquotes.
-    extra_indent: usize,
-
-    /// Extra spaces to write on continuation lines after a line wrap, used
-    /// to align wrapped list item text past the bullet/number prefix.
-    continuation_indent: usize,
-
-    /// Current blockquote nesting depth. Each level adds a `│ ` prefix to
-    /// every line.
-    blockquote_depth: usize,
+    /// The blocks around the current position, outermost first. They make
+    /// up the prefix of every line, its width and the continuation indent
+    /// of wrapped list item text.
+    prefix: Vec<Segment>,
 
     /// How soft line breaks and raw HTML render.
     options: RenderOptions,
@@ -163,9 +171,7 @@ impl Renderer {
             word: StyledLine::default(),
             pending_space: None,
             style_stack: Vec::new(),
-            extra_indent: 0,
-            continuation_indent: 0,
-            blockquote_depth: 0,
+            prefix: Vec::new(),
             options,
             in_inline_content: false,
         }
@@ -269,16 +275,14 @@ impl Renderer {
         // The indent is applied around whichever rendering branch
         // runs, so the structural layout stays identical between
         // highlighted and fallback modes.
-        self.extra_indent += 1;
-
-        // A block that syntect fails to highlight renders like one without
-        // a language rather than failing the whole render.
-        match crate::highlight::try_highlight(value, lang) {
-            Some(lines) => self.render_code_block_highlighted(&lines),
-            None => self.render_code_block_plain(value),
-        }
-
-        self.extra_indent -= 1;
+        self.with_segment(Segment::Nest(NEST_INDENT_WIDTH), |renderer| {
+            // A block that syntect fails to highlight renders like one
+            // without a language rather than failing the whole render.
+            match crate::highlight::try_highlight(value, lang) {
+                Some(lines) => renderer.render_code_block_highlighted(&lines),
+                None => renderer.render_code_block_plain(value),
+            }
+        });
     }
 
     /// Render a YAML (`---`) or TOML (`+++`) frontmatter block as a
@@ -305,8 +309,7 @@ impl Renderer {
             self.write_indent();
             self.emit(line);
             self.column = UnicodeWidthStr::width(line);
-            self.consecutive_newlines = 0;
-            self.at_start = false;
+            self.mark_drawn();
             self.write_newline();
         }
         self.pop_style();
@@ -325,8 +328,7 @@ impl Renderer {
                 column += UnicodeWidthStr::width(span.text.as_str());
             }
             self.column = column;
-            self.consecutive_newlines = 0;
-            self.at_start = false;
+            self.mark_drawn();
             self.write_newline();
         }
     }
@@ -351,8 +353,7 @@ impl Renderer {
             // so `write_newline` can terminate the row cleanly. The
             // subsequent `write_newline` resets `column` back to 0.
             self.column = 0;
-            self.consecutive_newlines = 0;
-            self.at_start = false;
+            self.mark_drawn();
             self.write_newline();
         }
     }
@@ -363,20 +364,24 @@ impl Renderer {
         // prefix, which visually belongs inside the blockquote, not between
         // the preceding block and the blockquote.
         self.ensure_block_spacing();
-        self.blockquote_depth += 1;
-        self.push_style(Style::Dim);
-        self.push_style(Style::Italic);
-        self.render_children(children);
-        self.pop_style();
-        self.pop_style();
-        self.blockquote_depth -= 1;
+        self.with_segment(Segment::Quote, |renderer| {
+            renderer.push_style(Style::Dim);
+            renderer.push_style(Style::Italic);
+            renderer.render_children(children);
+            renderer.pop_style();
+            renderer.pop_style();
+        });
     }
 
     fn render_list(&mut self, list: &markdown::mdast::List) {
         // Top-level lists need block spacing from surrounding content.
-        // Nested lists (inside list items) only need a line break — the
-        // parent item's content already ended with one.
-        if self.extra_indent == 0 {
+        // Lists inside a list item only need a line break — the parent
+        // item's content already ended with one.
+        let in_item = self
+            .prefix
+            .iter()
+            .any(|segment| matches!(segment, Segment::Item { .. }));
+        if !in_item {
             self.ensure_block_spacing();
         }
         let mut number = list.start.unwrap_or(1);
@@ -403,14 +408,21 @@ impl Renderer {
         let prefix_width = UnicodeWidthStr::width(prefix.as_str());
         self.column += prefix_width;
         self.text_start = self.column;
-        self.consecutive_newlines = 0;
-        self.at_start = false;
+        self.mark_drawn();
 
-        // Set continuation indent so that wrapped lines align past the
-        // bullet/number prefix.
-        let prev_continuation = self.continuation_indent;
-        self.continuation_indent = prefix_width;
+        // While the item is the innermost segment, wrapped lines align
+        // past the bullet/number prefix.
+        let segment = Segment::Item {
+            hang: prefix_width,
+            bare: true,
+        };
+        self.with_segment(segment, |renderer| {
+            renderer.render_list_item_children(&item.children);
+        });
+        self.ensure_line_break();
+    }
 
+    fn render_list_item_children(&mut self, children: &[Node]) {
         // Render item content. ListItem children are typically Paragraph
         // nodes. We render the first paragraph's inline children
         // directly so that the text starts immediately after the
@@ -427,13 +439,13 @@ impl Renderer {
         // indent, the second paragraph would render back at the left
         // margin instead of aligned under the bullet.
         let mut is_first = true;
-        for child in &item.children {
+        for child in children {
             match child {
                 Node::Paragraph(p) => {
                     if !is_first {
                         self.ensure_block_spacing();
                         self.write_indent();
-                        if self.continuation_indent > 0 {
+                        if self.continuation_indent() > 0 {
                             self.write_continuation_indent();
                             self.consecutive_newlines = 0;
                             self.at_start = false;
@@ -449,34 +461,34 @@ impl Renderer {
                 // list sets one for its own items.
                 //
                 // A block can't share the bullet's line, as its lines sit
-                // at the nesting indent and not past the bullet. When the
-                // line holds only the bullet, the block starts on the next
-                // line without a blank line in between, so the bullet stays
-                // attached to it: `at_start` makes the block's spacing
-                // stand down, as at the top of the output.
+                // at the nesting indent and not past the bullet. While
+                // nothing has been drawn after the bullet, the block starts
+                // on the next line without a blank line in between, so the
+                // bullet stays attached to it: `at_start` makes the block's
+                // spacing stand down, as at the top of the output. Whatever
+                // the line holds then (the bullet, or the continuation
+                // indent after a break in text that drew nothing) is closed
+                // first, so the block's prefix starts a line of its own.
                 other => {
-                    let bare_prefix =
-                        self.consecutive_newlines == 0 && self.column == self.text_start;
-                    self.ensure_line_break();
-                    if bare_prefix {
+                    if self.innermost_item_is_bare() {
+                        if !self.line.spans.is_empty() {
+                            self.write_newline();
+                        }
                         self.at_start = true;
+                    } else {
+                        self.ensure_line_break();
                     }
-                    self.extra_indent += 1;
-                    self.continuation_indent = 0;
-                    self.render_node(other);
-                    self.continuation_indent = prefix_width;
-                    self.extra_indent -= 1;
+                    self.with_segment(Segment::Nest(NEST_INDENT_WIDTH), |renderer| {
+                        renderer.render_node(other);
+                    });
                     // A block that draws nothing leaves `at_start` set,
-                    // but the bullet above is output that the next block
-                    // needs its blank line from.
+                    // but the bullet above is output that a later block
+                    // after the list needs its blank line from.
                     self.at_start = false;
                 }
             }
             is_first = false;
         }
-
-        self.continuation_indent = prev_continuation;
-        self.ensure_line_break();
     }
 
     fn render_thematic_break(&mut self) {
@@ -485,8 +497,7 @@ impl Renderer {
         let width = self.effective_width();
         self.emit(&"─".repeat(width));
         self.column = width;
-        self.consecutive_newlines = 0;
-        self.at_start = false;
+        self.mark_drawn();
         self.write_newline();
     }
 
@@ -506,8 +517,7 @@ impl Renderer {
             self.write_indent();
             self.emit(line);
             self.column = UnicodeWidthStr::width(line);
-            self.consecutive_newlines = 0;
-            self.at_start = false;
+            self.mark_drawn();
             self.write_newline();
         }
     }
@@ -733,8 +743,7 @@ impl Renderer {
             self.line.push_str(&piece.text, piece.style);
         }
         self.column += width;
-        self.consecutive_newlines = 0;
-        self.at_start = false;
+        self.mark_drawn();
     }
 
     /// Break to a new line and indent it so that wrapped text lines up
@@ -743,7 +752,7 @@ impl Renderer {
         self.write_newline();
         self.write_indent();
         // Add continuation indent to align past list bullet/number.
-        if self.continuation_indent > 0 {
+        if self.continuation_indent() > 0 {
             self.write_continuation_indent();
         }
     }
@@ -767,10 +776,61 @@ impl Renderer {
     /// at least 1 to prevent degenerate behavior (e.g. invisible thematic
     /// breaks, every word on its own line).
     fn effective_width(&self) -> usize {
-        self.content_width
-            .saturating_sub(self.extra_indent * NEST_INDENT_WIDTH)
-            .saturating_sub(self.blockquote_depth * 2)
-            .max(1)
+        let prefix_width: usize = self
+            .prefix
+            .iter()
+            .map(|segment| match segment {
+                Segment::Nest(width) => *width,
+                Segment::Quote => UnicodeWidthStr::width(BLOCKQUOTE_BAR),
+                Segment::Item { .. } => 0,
+            })
+            .sum();
+        self.content_width.saturating_sub(prefix_width).max(1)
+    }
+
+    /// Render with `segment` added to the line prefix, and remove it again
+    /// afterwards. Every segment enters and leaves the prefix here, so the
+    /// stack always matches the blocks being rendered.
+    fn with_segment(&mut self, segment: Segment, render: impl FnOnce(&mut Self)) {
+        self.prefix.push(segment);
+        render(self);
+        self.prefix
+            .pop()
+            .expect("with_segment pops the segment it pushed");
+    }
+
+    /// How far a wrapped line of list item text starts past the prefix:
+    /// the item's bullet width while the item itself is rendering, 0 inside
+    /// any block nested in it, which has a `Nest` of its own on top.
+    fn continuation_indent(&self) -> usize {
+        match self.prefix.last() {
+            Some(Segment::Item { hang, .. }) => *hang,
+            _ => 0,
+        }
+    }
+
+    /// Whether nothing has been drawn since the bullet of the list item
+    /// being rendered.
+    fn innermost_item_is_bare(&self) -> bool {
+        let innermost_item = self
+            .prefix
+            .iter()
+            .rev()
+            .find(|segment| matches!(segment, Segment::Item { .. }));
+        matches!(innermost_item, Some(Segment::Item { bare: true, .. }))
+    }
+
+    /// Record that visible content went onto the line: it ends a run of
+    /// blank lines, the start of the output, and the bare bullet of every
+    /// list item around it.
+    fn mark_drawn(&mut self) {
+        self.consecutive_newlines = 0;
+        self.at_start = false;
+        for segment in &mut self.prefix {
+            if let Segment::Item { bare, .. } = segment {
+                *bare = false;
+            }
+        }
     }
 
     /// Append `text` to the current line in the style of the style stack.
@@ -787,20 +847,34 @@ impl Renderer {
         self.consecutive_newlines += 1;
     }
 
-    /// Write the line prefix: one unstyled indent per nesting level, then
-    /// one dim `│ ` bar per blockquote level. The prefix is layout, so it
-    /// never takes on the style of the content around it.
+    /// Write the whole line prefix.
     fn write_indent(&mut self) {
-        let has_indent = self.extra_indent > 0 || self.blockquote_depth > 0;
+        self.write_prefix(self.prefix.len());
+    }
 
-        self.line
-            .push_str(&NEST_INDENT.repeat(self.extra_indent), TextStyle::default());
-        self.line
-            .push_str(&BLOCKQUOTE_BAR.repeat(self.blockquote_depth), BAR_STYLE);
+    /// Write the first `segments` levels of the line prefix, outermost
+    /// first: an unstyled indent for a `Nest`, a `│ ` bar for a `Quote`,
+    /// nothing for a list item. The prefix is layout, so it never takes on
+    /// the style of the content around it.
+    fn write_prefix(&mut self, segments: usize) {
+        let mut wrote = false;
+        for index in 0..segments {
+            match self.prefix[index] {
+                Segment::Nest(width) => {
+                    self.line.push_str(&" ".repeat(width), TextStyle::default());
+                    wrote = true;
+                }
+                Segment::Quote => {
+                    self.line.push_str(BLOCKQUOTE_BAR, BAR_STYLE);
+                    wrote = true;
+                }
+                Segment::Item { .. } => {}
+            }
+        }
 
         // Only update output-tracking state when we actually wrote something,
-        // so that a zero-indent call doesn't silently claim output occurred.
-        if has_indent {
+        // so that an empty prefix doesn't silently claim output occurred.
+        if wrote {
             self.consecutive_newlines = 0;
             self.at_start = false;
             self.pending_space = None;
@@ -811,9 +885,10 @@ impl Renderer {
     /// item past its bullet or number. Like the line prefix, they are
     /// unstyled.
     fn write_continuation_indent(&mut self) {
+        let indent = self.continuation_indent();
         self.line
-            .push_str(&" ".repeat(self.continuation_indent), TextStyle::default());
-        self.column += self.continuation_indent;
+            .push_str(&" ".repeat(indent), TextStyle::default());
+        self.column += indent;
         self.text_start = self.column;
     }
 
@@ -821,8 +896,9 @@ impl Renderer {
     /// until there are at least two consecutive ones (i.e., one visible blank
     /// line). Skipped at the very start of the output.
     ///
-    /// When inside a blockquote, the blank line includes the indent and `│`
-    /// bar prefix so that the visual bar column is unbroken.
+    /// When inside a blockquote, the blank line carries the prefix up to
+    /// the innermost `│` bar so that the visual bar column is unbroken.
+    /// Indents after that bar would only be trailing blanks.
     fn ensure_block_spacing(&mut self) {
         if self.at_start {
             return;
@@ -831,12 +907,16 @@ impl Renderer {
             // Block spacing is already satisfied.
             return;
         }
-        if self.blockquote_depth > 0 {
+        let innermost_quote = self
+            .prefix
+            .iter()
+            .rposition(|segment| *segment == Segment::Quote);
+        if let Some(innermost_quote) = innermost_quote {
             if self.consecutive_newlines == 0 {
                 self.write_newline();
             }
             // Write a blank line that carries the blockquote bar prefix.
-            self.write_indent();
+            self.write_prefix(innermost_quote + 1);
             self.write_newline();
             // write_indent resets consecutive_newlines to 0, and the
             // subsequent write_newline sets it to 1. Force it to 2 so that

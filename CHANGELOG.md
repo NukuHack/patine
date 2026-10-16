@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- A code block, list or other block inside a block quote sits inside
+  the quote's bar. A code block in a quote rendered as `  │ code` and
+  now renders as `│   code`; a nested list in a quote rendered as
+  `  │ • b` and now renders as `│   • b`. The same holds for blocks
+  nested in a list item inside a quote: `> - > quote` rendered its inner
+  line as `  │ │ quote` and now renders `│   │ quote`. The blank line
+  between two blocks there ends at the bar.
+- A list item whose first block draws nothing, such as an empty code
+  block or an HTML block under `Html::Drop`, puts no blank line between
+  its bullet and the next block, as when the item starts with that
+  block.
+
 ## [1.6.3] - 2026-10-14
 
 ### Fixed

@@ -2,7 +2,6 @@
 title: "Show the checkbox of a task list item"
 kind: bug
 component: render
-status: blocked
 origin: request
 tags: [field-test]
 ---
@@ -34,7 +33,3 @@ draws the bullet.
   (`asqr/src/tui/render/patine_adapter.rs:114-152`); asqr adds the boxes
   when it picks up this release.
 - Prototype: `PROTO_TASK` in the prototype named in the quote todo.
-
-## Relations
-
-- Depends on: [Compose the line prefix from a stack of nested blocks](01M4YA25APXNYS8AM32RCMWRMY-compose-the-line-prefix-from-a-stack-of-nested-blocks.md)

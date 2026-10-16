@@ -218,7 +218,8 @@ Fenced code blocks are indented by one nesting level (2 spaces) to visually
 separate them from surrounding prose. Content is never wrapped. The
 opening/closing fence markers (`` ``` ``) are stripped. The language
 identifier from the fence (e.g., `` ```rust ``) drives syntax highlighting
-but is not itself displayed.
+but is not itself displayed. Inside a blockquote, the indent follows the
+bar (see Blockquotes).
 
 ### Syntax highlighting
 
@@ -276,6 +277,18 @@ Block-level elements nested inside a blockquote (such as tables, code
 blocks, lists, and horizontal rules) carry the `│ ` bar prefix on
 every rendered line — including border, header, separator, and data
 lines for tables.
+
+Prefixes follow the nesting from the outside in. A quote's bar comes
+before the indent of a code block or list item inside it, and a quote
+inside a list item sits after the item's indent:
+
+```
+│   let x = 1;          ← code block in a quote
+│ • Item
+│   • Nested item       ← list nested in a list in a quote
+• Item
+  │ Quote in the item
+```
 
 ## Horizontal Rules
 
