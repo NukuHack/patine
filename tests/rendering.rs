@@ -593,6 +593,88 @@ fn unordered_list_with_inline_code() {
 }
 
 // =========================================================
+// Task lists
+// =========================================================
+
+#[test]
+fn open_task_shows_an_empty_box() {
+    assert_eq!(render("- [ ] open"), "☐ open\n");
+}
+
+#[test]
+fn done_task_shows_a_checked_box_and_dims_its_line() {
+    assert_eq!(render("- [x] done"), "[dim]☑ done[]\n");
+    assert_eq!(render("- [X] done"), "[dim]☑ done[]\n");
+}
+
+#[test]
+fn numbered_task_keeps_its_number_before_the_box() {
+    // The number of a done task dims with the rest of its line.
+    assert_eq!(
+        render("1. [ ] open\n2. [x] done"),
+        "1. ☐ open\n[dim]2. ☑ done[]\n"
+    );
+}
+
+#[test]
+fn task_text_wraps_past_the_box() {
+    assert_eq!(
+        plain_lines("- [ ] aaaa bbbb cccc", 11),
+        ["☐ aaaa bbbb", "  cccc"]
+    );
+    assert_eq!(
+        plain_lines("1. [x] aaaa bbbb", 12),
+        ["1. ☑ aaaa", "     bbbb"]
+    );
+}
+
+#[test]
+fn items_under_a_done_task_keep_their_own_style() {
+    assert_eq!(
+        render("- [x] done\n  - [ ] open\n  - plain"),
+        "[dim]☑ done[]\n  ☐ open\n  • plain\n"
+    );
+}
+
+#[test]
+fn blocks_of_a_done_task_are_dim_but_its_sub_items_are_not() {
+    // Code tokens keep their color under the dim; a later paragraph of
+    // the item is dim as well.
+    assert_eq!(
+        render("- [x] Ship it\n\n  ```\n  cargo publish\n  ```\n\n  Then tag.\n\n  - [ ] notes"),
+        "[dim]☑ Ship it[]\n\n    [dim,yellow]cargo publish[]\n\n  [dim]Then tag.[]\n  ☐ notes\n"
+    );
+}
+
+#[test]
+fn tasks_and_plain_items_mix() {
+    assert_eq!(
+        plain_lines("- [x] a\n- b\n- [ ] c", 80),
+        ["☑ a", "• b", "☐ c"]
+    );
+}
+
+#[test]
+fn task_in_a_quote_keeps_the_bar_style() {
+    assert_eq!(render("> - [x] q"), "[cyan]│ [][dim]☑ q[]\n");
+}
+
+#[test]
+fn an_item_with_only_a_check_is_no_task() {
+    // markdown-rs wants text after the check, so this stays a plain item.
+    assert_eq!(plain_lines("- [x]", 80), ["• [x]"]);
+}
+
+#[test]
+fn task_markers_are_one_column_wide() {
+    // The hang of a task item counts on this.
+    use unicode_width::UnicodeWidthStr;
+    for marker in ["☐", "☑", "•"] {
+        assert_eq!(UnicodeWidthStr::width(marker), 1, "{marker}");
+    }
+}
+
+// =========================================================
 // Nested lists
 // =========================================================
 

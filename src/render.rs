@@ -19,6 +19,15 @@ const CODE_COLOR: AnsiColor = AnsiColor::Yellow;
 /// Prefix for each blockquote nesting level.
 const BLOCKQUOTE_BAR: &str = "│ ";
 
+/// The marker of an unordered list item.
+const BULLET: &str = "•";
+
+/// The marker of an open task list item, in place of the bullet.
+const TASK_OPEN: &str = "☐";
+
+/// The marker of a done task list item, in place of the bullet.
+const TASK_DONE: &str = "☑";
+
 // =========================================================
 // Line prefix
 // =========================================================
@@ -386,13 +395,28 @@ impl Renderer {
         self.ensure_line_break();
         self.write_indent();
 
-        // Write the bullet or number prefix.
-        let prefix = if ordered {
-            format!("{number}. ")
-        } else {
-            "• ".to_string()
+        // Write the bullet or number prefix. A task item shows its box in
+        // place of the bullet, or after the number of an ordered item.
+        let task_box = item
+            .checked
+            .map(|done| if done { TASK_DONE } else { TASK_OPEN });
+        let prefix = match (ordered, task_box) {
+            (false, None) => format!("{BULLET} "),
+            (false, Some(task_box)) => format!("{task_box} "),
+            (true, None) => format!("{number}. "),
+            (true, Some(task_box)) => format!("{number}. {task_box} "),
         };
+
+        // A done task recedes: its whole line, number and box included,
+        // is dim.
+        let done = item.checked == Some(true);
+        if done {
+            self.push_style(Style::Dim);
+        }
         self.emit(&prefix);
+        if done {
+            self.pop_style();
+        }
         let prefix_width = UnicodeWidthStr::width(prefix.as_str());
         self.column += prefix_width;
         self.text_start = self.column;
@@ -405,12 +429,15 @@ impl Renderer {
             bare: true,
         };
         self.with_segment(segment, |renderer| {
-            renderer.render_list_item_children(&item.children);
+            renderer.render_list_item_children(&item.children, done);
         });
         self.ensure_line_break();
     }
 
-    fn render_list_item_children(&mut self, children: &[Node]) {
+    /// Render the blocks of a list item. Everything in a `done` task is
+    /// dim except its nested lists: each item in them shows its own state,
+    /// so an open sub-task does not look done.
+    fn render_list_item_children(&mut self, children: &[Node], done: bool) {
         // Render item content. ListItem children are typically Paragraph
         // nodes. We render the first paragraph's inline children
         // directly so that the text starts immediately after the
@@ -428,6 +455,10 @@ impl Renderer {
         // margin instead of aligned under the bullet.
         let mut is_first = true;
         for child in children {
+            let dim = done && !matches!(child, Node::List(_));
+            if dim {
+                self.push_style(Style::Dim);
+            }
             match child {
                 Node::Paragraph(p) => {
                     if !is_first {
@@ -474,6 +505,9 @@ impl Renderer {
                     // after the list needs its blank line from.
                     self.at_start = false;
                 }
+            }
+            if dim {
+                self.pop_style();
             }
             is_first = false;
         }

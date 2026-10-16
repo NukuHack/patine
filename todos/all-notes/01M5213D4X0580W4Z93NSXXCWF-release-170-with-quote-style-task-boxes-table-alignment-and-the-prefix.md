@@ -2,7 +2,6 @@
 title: "Release 1.7.0 with quote style, task boxes, table alignment and the prefix stack"
 kind: chore
 component: project
-status: blocked
 origin: discussion
 tags: [field-test]
 ---
@@ -12,6 +11,12 @@ Jakob, 2026-10-16 (asqr session 01M51YN8AA9K008BB5WSJQ02YH): the four
 todos below go out together as one release, 1.7.0, since task boxes and
 table alignment are additions. asqr picks it up right after for its
 next release.
+
+## State
+
+The four todos are implemented and their notes deleted: the prefix
+stack, the quote style (`QuoteStyle`), the task boxes and table
+alignment. Their CHANGELOG entries sit under `## [Unreleased]`.
 
 ## How to release
 
@@ -28,7 +33,3 @@ and `Cargo.lock`; tag `v1.7.0`; push `main` and the tag, which starts
 - The four todos are closed, the changelog has their entries, the
   GitHub release v1.7.0 exists with its binaries and crates.io lists
   patine 1.7.0.
-
-## Relations
-
-- Depends on: [Show the checkbox of a task list item](01M51XEQTSQAXS3NAN4N0X6NBF-show-the-checkbox-of-a-task-list-item.md)

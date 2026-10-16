@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   quotes look: `QuoteStyle::Bar(color)` draws the `│` bar in a palette
   color (the default is cyan), `QuoteStyle::DimBar` draws it dim without
   a color.
+- Task list items show `☐` (open) or `☑` (done) in place of the
+  bullet. A numbered task keeps its number in front of the box
+  (`1. ☐`). A done task is dim, number and box included, and so is
+  everything in it except nested lists, whose items show their own
+  state. Task items used to show a plain bullet, so done and open tasks
+  looked the same.
 - Table columns follow the alignment of the delimiter row (`:--`,
   `:-:`, `--:`), header and data cells alike. A column without
   alignment keeps its centered header and left-aligned data.

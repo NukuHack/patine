@@ -45,7 +45,7 @@ patine --width 100 README.md
 - **Code blocks**: verbatim, never wrapped; syntax-highlighted with the terminal's ANSI palette when a language is specified on the fence
 - **Links**: underlined text, URL in dimmed parentheses unless the text is the URL, as in autolinks
 - **Images**: `[image: alt text]` with the path/URL dimmed
-- **Lists**: ordered and unordered, with arbitrary nesting
+- **Lists**: ordered, unordered and task lists (`☐`/`☑`), with arbitrary nesting
 - **Tables**: Unicode box-drawing borders, bold headers, column alignment from the delimiter row, row separators
 - **Blockquotes**: `│` bar prefix in cyan, text in its normal style, nested support
 - **Horizontal rules**: `─` spanning the terminal width

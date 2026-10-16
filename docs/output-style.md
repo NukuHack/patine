@@ -126,11 +126,32 @@ simply take the space they need.
 
 ## Unordered Lists
 
-Bullet character is `•`, followed by a space, then content.
+Bullet character is `•`, followed by a space, then content. Task items
+show a box instead (see Task Lists).
 
 ```
 • First item with some text
 • Second item with some text
+```
+
+## Task Lists
+
+A task list item (`- [ ]`, `- [x]`) shows a box in place of its bullet:
+`☐` for an open task, `☑` for a done one. A numbered task keeps its
+number, with the box after it (`1. ☐`). The boxes have no color.
+
+A done task recedes: its line, number and box included, is dimmed, and
+so is everything else in the item except nested lists. Each item of a
+nested list shows its own state, so an open sub-task under a done task
+does not look done.
+
+```
+☐ Write the release notes
+☑ Tag the release               ← dimmed
+  ☐ Publish the notes           ← nested, keeps its own style
+
+1. ☐ Open numbered task
+2. ☑ Done numbered task         ← dimmed, number included
 ```
 
 ## Nested Lists
@@ -152,7 +173,8 @@ and vice versa).
 2. Second
 ```
 
-All nesting levels use the same `•` bullet character.
+All nesting levels use the same `•` bullet character; task items show a
+box instead (see Task Lists).
 
 A single list item may contain multiple paragraphs (a "loose" list).
 Subsequent paragraphs are separated from the first by a blank line and
@@ -345,6 +367,7 @@ restrained use of color and styling.
 | Code blocks (unknown/no lang) | Distinct color (same as inline)    |
 | Link text           | Underlined                         |
 | Link URL            | Dimmed                             |
+| Done task           | Dimmed (nested lists excepted)     |
 | Blockquote text     | Default                            |
 | Blockquote bar `│`  | Cyan                               |
 | Table borders       | Default                            |
