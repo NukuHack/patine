@@ -4,6 +4,7 @@ kind: improvement
 component: render
 status: needs-discussion
 origin: request
+tags: [field-test]
 ---
 # Make blockquote text readable instead of dim italic
 

@@ -3,6 +3,7 @@ title: "Align table columns as the delimiter row asks"
 kind: feature
 component: table
 origin: request
+tags: [field-test]
 ---
 # Align table columns as the delimiter row asks
 

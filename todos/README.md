@@ -89,6 +89,8 @@ those citations change with it (`rg -i <ulid>` finds them).
 ## Tags
 
 - `api-design`: the library API other tools build on
+- `field-test`: found while testing asqr by hand in real terminals,
+  starting with the run of 2026-10-16
 
 ## Milestones
 

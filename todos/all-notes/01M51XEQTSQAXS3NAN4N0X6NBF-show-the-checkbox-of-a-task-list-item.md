@@ -3,6 +3,7 @@ title: "Show the checkbox of a task list item"
 kind: bug
 component: render
 origin: request
+tags: [field-test]
 ---
 # Show the checkbox of a task list item
 
