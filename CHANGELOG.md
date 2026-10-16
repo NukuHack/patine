@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Table columns follow the alignment of the delimiter row (`:--`,
+  `:-:`, `--:`), header and data cells alike. A column without
+  alignment keeps its centered header and left-aligned data.
+
 ### Fixed
 
 - A code block, list or other block inside a block quote sits inside

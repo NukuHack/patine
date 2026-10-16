@@ -39,17 +39,17 @@ patine --width 100 README.md
 
 ## What It Renders
 
-- **Frontmatter** — YAML (`---`) and TOML (`+++`) metadata at the document start, rendered verbatim as a syntax-highlighted block, fences included
-- **Headings** — H1 italic + underlined, H2–H6 bold
-- **Inline formatting** — bold, italic, bold-italic, strikethrough, inline code
-- **Code blocks** — verbatim, never wrapped; syntax-highlighted with the terminal's ANSI palette when a language is specified on the fence
-- **Links** — underlined text, URL in dimmed parentheses unless the text is the URL, as in autolinks
-- **Images** — `[image: alt text]` with the path/URL dimmed
-- **Lists** — ordered and unordered, with arbitrary nesting
-- **Tables** — Unicode box-drawing borders, centered bold headers, row separators
-- **Blockquotes** — `│` bar prefix, dimmed italic text, nested support
-- **Horizontal rules** — `─` spanning the terminal width
-- **Word wrapping** — at terminal width (overridable with `--width`)
+- **Frontmatter**: YAML (`---`) and TOML (`+++`) metadata at the document start, rendered verbatim as a syntax-highlighted block, fences included
+- **Headings**: H1 italic + underlined, H2–H6 bold
+- **Inline formatting**: bold, italic, bold-italic, strikethrough, inline code
+- **Code blocks**: verbatim, never wrapped; syntax-highlighted with the terminal's ANSI palette when a language is specified on the fence
+- **Links**: underlined text, URL in dimmed parentheses unless the text is the URL, as in autolinks
+- **Images**: `[image: alt text]` with the path/URL dimmed
+- **Lists**: ordered and unordered, with arbitrary nesting
+- **Tables**: Unicode box-drawing borders, bold headers, column alignment from the delimiter row, row separators
+- **Blockquotes**: `│` bar prefix, dimmed italic text, nested support
+- **Horizontal rules**: `─` spanning the terminal width
+- **Word wrapping**: at terminal width (overridable with `--width`)
 
 ## Usage
 

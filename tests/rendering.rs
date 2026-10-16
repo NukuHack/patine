@@ -949,6 +949,94 @@ fn table_variable_row_heights() {
 }
 
 // =========================================================
+// Table column alignment
+// =========================================================
+
+/// The rows of a rendered table that hold cell text, without the border
+/// and separator lines.
+fn table_rows(markdown: &str, width: usize) -> Vec<String> {
+    plain_lines(markdown, width)
+        .into_iter()
+        .filter(|line| line.starts_with('│'))
+        .collect()
+}
+
+#[test]
+fn aligned_columns_follow_the_delimiter_row() {
+    // A centred cell puts the odd column of its padding on the right.
+    assert_eq!(
+        table_rows(
+            "| left | centre | right | none |\n|:--|:-:|--:|---|\n| a | b | c | d |",
+            80
+        ),
+        [
+            "│ left │ centre │ right │ none │",
+            "│ a    │   b    │     c │ d    │"
+        ]
+    );
+}
+
+#[test]
+fn header_of_an_aligned_column_follows_its_alignment() {
+    assert_eq!(
+        table_rows(
+            "| h | h | h | h |\n|:--|:-:|--:|---|\n| aaaaa | bbbbb | ccccc | ddddd |",
+            80
+        ),
+        [
+            "│ h     │   h   │     h │   h   │",
+            "│ aaaaa │ bbbbb │ ccccc │ ddddd │"
+        ]
+    );
+}
+
+#[test]
+fn unaligned_columns_keep_centred_header_and_left_data() {
+    assert_eq!(
+        table_rows("| h | head |\n|---|---|\n| aaaaa | a |", 80),
+        ["│   h   │ head │", "│ aaaaa │ a    │"]
+    );
+}
+
+#[test]
+fn wrapped_cell_lines_align_each_on_their_own() {
+    assert_eq!(
+        table_rows("| x |\n|--:|\n| aaaa bb |", 8),
+        ["│    x │", "│ aaaa │", "│   bb │"]
+    );
+}
+
+#[test]
+fn header_padding_of_an_aligned_column_is_bold() {
+    let lines = render_lines("| h |\n|:--|\n| aaaaa |", 80);
+    let header: Vec<(char, TextStyle)> = styled_chars(&lines[1])[2..7].to_vec();
+    let mut bold = TextStyle::default();
+    bold.bold = true;
+    assert_eq!(
+        header,
+        [
+            ('h', bold),
+            (' ', bold),
+            (' ', bold),
+            (' ', bold),
+            (' ', bold)
+        ],
+        "{}",
+        serialize(&lines)
+    );
+}
+
+#[test]
+fn cells_past_the_delimiter_row_render_unaligned() {
+    // markdown-rs keeps a cell that has no column in the delimiter row,
+    // and the table gives it a column without an alignment.
+    assert_eq!(
+        table_rows("| aaa |\n|--:|\n| b | c |", 80),
+        ["│ aaa │   │", "│   b │ c │"]
+    );
+}
+
+// =========================================================
 // Code blocks
 // =========================================================
 

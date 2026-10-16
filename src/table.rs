@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use markdown::mdast::Node;
+use markdown::mdast::{AlignKind, Node};
 use unicode_width::UnicodeWidthStr;
 
 use crate::options::Html;
@@ -102,8 +102,12 @@ fn row_texts(row: &Node, html: Html) -> Vec<String> {
 /// its own context style (a blockquote's dim italic) over these spans.
 ///
 /// Layout rules:
-///   - Header row text is **centered** and **bold**, per wrapped line.
-///   - Data rows are left-aligned with one space padding on each side.
+///   - A column follows the alignment of its delimiter row (`:--` left,
+///     `:-:` centered, `--:` right), header and data cells alike. A
+///     column without one has its header **centered** and its data
+///     left-aligned. Alignment applies per wrapped line.
+///   - Header row text is **bold**.
+///   - Cells have one space padding on each side.
 ///   - Horizontal separators appear between every pair of adjacent
 ///     rows.
 ///   - Column widths are sized to fit within `available_width` when
@@ -196,7 +200,13 @@ pub fn layout_table(
         let row_height = wrapped.iter().map(Vec::len).max().unwrap_or(1).max(1);
         let is_header = row_idx == 0;
         for line_idx in 0..row_height {
-            lines.push(row_line(wrapped, line_idx, &col_widths, is_header));
+            lines.push(row_line(
+                wrapped,
+                line_idx,
+                &col_widths,
+                is_header,
+                &table.align,
+            ));
         }
         if row_idx < wrapped_rows.len() - 1 {
             lines.push(border_line(&col_widths, LEFT_T, CROSS, RIGHT_T));
@@ -305,11 +315,16 @@ fn distribute_widths(natural: &[usize], minimum: &[usize], budget: usize) -> Vec
 /// wrapped lines we're emitting on this visual line. A cell that is
 /// shorter than the current row's height contributes an empty string
 /// on the overflow lines.
+///
+/// `align` holds the alignment of each column from the delimiter row. A
+/// row may have more cells than the delimiter row has columns; those
+/// cells render as unaligned.
 fn row_line(
     wrapped: &[Vec<String>],
     line_idx: usize,
     col_widths: &[usize],
     is_header: bool,
+    align: &[AlignKind],
 ) -> StyledLine {
     let plain = TextStyle::default();
     let mut line = StyledLine::default();
@@ -328,19 +343,23 @@ fn row_line(
         // for this line, which is the overflow fallback.
         let padding = width.saturating_sub(cell_width);
 
-        if is_header {
-            // Header cells are centered per wrapped line. The extra
-            // column of the padding (when `padding` is odd) goes on
-            // the right. The centering padding is part of the bold span.
-            let left_pad = padding / 2;
-            let right_pad = padding - left_pad;
-            line.push_str(
-                &format!("{:left_pad$}{cell_line}{:right_pad$}", "", ""),
-                HEADER_STYLE,
-            );
-        } else {
-            line.push_str(&format!("{cell_line}{:padding$}", ""), plain);
-        }
+        // A column without an alignment centers its header and puts its
+        // data on the left. A centered cell gives the extra column of an
+        // odd padding to the right.
+        let alignment = align.get(col).copied().unwrap_or(AlignKind::None);
+        let (left_pad, right_pad) = match (alignment, is_header) {
+            (AlignKind::Right, _) => (padding, 0),
+            (AlignKind::Center, _) | (AlignKind::None, true) => {
+                (padding / 2, padding - padding / 2)
+            }
+            (AlignKind::Left, _) | (AlignKind::None, false) => (0, padding),
+        };
+        // The alignment padding of a header cell is part of its bold span.
+        let style = if is_header { HEADER_STYLE } else { plain };
+        line.push_str(
+            &format!("{:left_pad$}{cell_line}{:right_pad$}", "", ""),
+            style,
+        );
 
         // Trailing space of the cell's padding.
         line.push_str(" ", plain);

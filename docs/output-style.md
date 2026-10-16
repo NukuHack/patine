@@ -164,10 +164,13 @@ than back at the left margin.
 
 Tables use full Unicode box-drawing characters with single-line borders.
 
-- **Header row**: text **centered** within the column, rendered **bold**.
-  Centering is applied per wrapped line when header text wraps across
-  multiple lines.
-- **Data rows**: text **left-aligned** with 1 space padding on each side.
+- **Alignment**: a column follows its delimiter row: `:--` left, `:-:`
+  centered, `--:` right, for header and data cells alike. A column
+  without a colon has its header **centered** and its data
+  **left-aligned**. Alignment applies per wrapped line when cell text
+  wraps across multiple lines.
+- **Header row**: rendered **bold**.
+- **Data rows**: 1 space padding on each side.
 - **Separators**: horizontal rules between the header and every data row.
 - **Column width**: a three-tier algorithm. (1) If the natural cell
   widths fit within the available terminal width, use them. (2)
@@ -342,7 +345,7 @@ restrained use of color and styling.
 | Blockquote text     | Dimmed, italic                     |
 | Blockquote bar `│`  | Dimmed                             |
 | Table borders       | Default                            |
-| Table header text   | Bold, centered                     |
+| Table header text   | Bold, centered unless aligned      |
 | Image marker        | Default                            |
 | Image path/URL      | Dimmed                             |
 | Horizontal rule     | Default                            |
