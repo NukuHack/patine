@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A table whose columns would have to break a word is laid out as
   records: one record per data row, one line per column with the
-  column's name from the header row in bold and then the cell's text,
+  column's name from the header row in bold and dim and then the cell's text,
   and a rule across the width between records. A value wraps in the
   room beside the names, or stands under its name when that room would
   break a word that fits there. Eight columns of short words at width

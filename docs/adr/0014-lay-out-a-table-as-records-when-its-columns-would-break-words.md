@@ -64,8 +64,8 @@ separates two records.
 - A table without data rows is one record of its names, one per line.
 - Alignment from the delimiter row applies to the boxed table only.
 
-The names are bold on top of their own styles, as the header row is,
-and the rule is `─` in the plain style of the table's borders. Each of
+The names are bold and dim on top of their own styles, and the rule is
+`─` in the plain style of the table's borders. Each of
 the two styles is one constant in `src/table.rs`.
 
 ## Consequences

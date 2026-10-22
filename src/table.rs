@@ -286,9 +286,16 @@ fn distribute_widths(natural: &[usize], minimum: &[usize], budget: usize) -> Vec
 // Records
 // =========================================================
 
-/// The style of a record's names on top of their own styles: bold, as
-/// the header row of a boxed table.
-const NAME_STYLE: TextStyle = HEADER_STYLE;
+/// The style of a record's names on top of their own styles: bold and
+/// dim.
+const NAME_STYLE: TextStyle = TextStyle {
+    bold: true,
+    italic: false,
+    dim: true,
+    strikethrough: false,
+    underline: crate::styled::Underline::None,
+    foreground: None,
+};
 
 /// The rule drawn across the width between two records.
 const RULE: &str = HORIZONTAL;

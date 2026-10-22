@@ -1254,10 +1254,10 @@ fn records_start_where_a_column_would_get_narrower_than_its_widest_word() {
 }
 
 #[test]
-fn record_names_are_bold_over_their_own_styles() {
+fn record_names_are_bold_and_dim_over_their_own_styles() {
     assert_eq!(
         serialize(&render_lines("| *n* | m |\n|--|--|\n| v | w |", 6)),
-        "[bold,italic]n[]  v\n[bold]m[]  w\n"
+        "[bold,dim,italic]n[]  v\n[bold,dim]m[]  w\n"
     );
 }
 
@@ -1369,11 +1369,11 @@ fn a_broken_url_in_a_record_stays_dim() {
 }
 
 #[test]
-fn a_broken_name_stays_bold() {
+fn a_broken_name_keeps_its_style() {
     // No room is left beside the name, so it stands on lines of its own.
     assert_eq!(
         serialize(&render_lines("| aaaaaaaaaa |\n|---|\n| b |", 9)),
-        "[bold]aaaaaaaaa[]\n[bold]a[]\n  b\n"
+        "[bold,dim]aaaaaaaaa[]\n[bold,dim]a[]\n  b\n"
     );
 }
 

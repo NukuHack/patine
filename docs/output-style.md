@@ -262,9 +262,9 @@ Box-drawing characters used:
 A table is laid out as records as soon as one of its columns would get
 narrower than the widest word of its cells, so that a word would have to
 break. A long URL is a word like any other. Each data row becomes a
-record, each column a field: the column's name from the header row, in
-**bold** on top of its own styles, then the row's cell. A rule of `─`
-across the width separates two records.
+record, each column a field: the column's name from the header row,
+**bold** and dimmed on top of its own styles, then the row's cell. A
+plain rule of `─` across the width separates two records.
 
 ```
 step   retry
