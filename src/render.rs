@@ -3,7 +3,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use markdown::mdast::Node;
-use unicode_width::UnicodeWidthChar;
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::line_endings::{split_line_endings, verbatim_lines};
 use crate::options::{Html, QuoteStyle, RenderOptions, SoftBreaks};
@@ -1098,35 +1098,13 @@ impl Renderer {
 // Breaking words
 // =========================================================
 
-/// Cut `text` into the units a word wider than its line breaks into:
-/// each character together with what joins it to the characters after
-/// it. These are the zero-width characters after it (variation
-/// selectors, the zero width joiner, combining marks), the character
-/// after a zero width joiner, and emoji skin tone modifiers.
-/// unicode-width gives such a sequence, `⚠️` or a family emoji, a width
-/// of its own that its parts do not add up to, so a unit is never cut.
-/// unicode-width gives a halfwidth sound mark no width, so `ｶﾞ` is one
-/// unit, two columns wide as [`text_width`] measures it.
-///
-/// This is not full grapheme segmentation: the two letters of a flag
-/// emoji, for example, are separate units.
+/// Cut `text` into the units a word wider than its line breaks into: its
+/// extended grapheme clusters, the units a terminal and ratatui draw
+/// whole. A letter keeps its combining marks and a halfwidth sound mark,
+/// and an emoji its variation selector, skin tone and the emoji joined to
+/// it, so `⚠️`, a family emoji or a flag is never cut.
 fn break_units(text: &str) -> Vec<&str> {
-    let mut units = Vec::new();
-    let mut start = 0;
-    let mut after_joiner = false;
-    for (index, c) in text.char_indices() {
-        let joined =
-            after_joiner || c.width() == Some(0) || ('\u{1F3FB}'..='\u{1F3FF}').contains(&c);
-        if index > start && !joined {
-            units.push(&text[start..index]);
-            start = index;
-        }
-        after_joiner = c == '\u{200D}';
-    }
-    if start < text.len() {
-        units.push(&text[start..]);
-    }
-    units
+    text.graphemes(true).collect()
 }
 
 // =========================================================
@@ -1147,10 +1125,17 @@ mod tests {
     }
 
     #[test]
+    fn a_word_breaks_between_the_letters_of_a_ligature() {
+        let lines =
+            render_inline_lines(&[text("لا")], 1, RenderOptions::default(), LongWords::Break);
+        let texts: Vec<String> = lines.iter().map(ToString::to_string).collect();
+        assert_eq!(texts, ["ل", "ا"]);
+    }
+
+    #[test]
     fn broken_word_stays_within_the_line_across_styles() {
-        // Lam and Alef make one column together, but only as one string:
-        // split across two spans they count 1 + 1. A word broken across
-        // styles is measured span by span, as its lines are.
+        // A word broken across styles is measured span by span, as its
+        // lines are drawn: each span on its own, grapheme by grapheme.
         let word = [
             Node::Strong(Strong {
                 children: vec![text("ل")],

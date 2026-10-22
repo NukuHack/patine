@@ -141,6 +141,12 @@ fn width_counts_display_columns_not_bytes() {
 }
 
 #[test]
+fn width_counts_each_grapheme_as_terminals_draw_it() {
+    let lines = render_lines("لا", 80);
+    assert_eq!(lines[0].width(), 2);
+}
+
+#[test]
 fn width_counts_a_halfwidth_sound_mark_as_terminals_draw_it() {
     let lines = render_lines("ｶﾞ", 80);
     assert_eq!(lines[0].width(), 2);

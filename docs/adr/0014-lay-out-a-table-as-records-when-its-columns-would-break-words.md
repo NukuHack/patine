@@ -55,8 +55,8 @@ separates two records.
   indented by two columns. This follows the rule that a table does not
   break words. A word wider than the room under the names breaks either
   way, so it does not decide.
-- A word wider than its room breaks between characters, as in ADR 11's
-  amendment, and keeps its style.
+- A word wider than its room breaks between graphemes (ADR 13), and
+  keeps its style.
 - An empty header cell, or a column past the header's last cell, has an
   empty name; when every name is empty, values start at the left edge.
   A field whose cell is empty or missing shows its name alone. Every
@@ -76,6 +76,5 @@ the two styles is one constant in `src/table.rs`.
 - ADR 8's rule that a word wider than the line is never broken inside
   holds again for boxed table cells; in a record's value such a word
   breaks.
-- A line of a record is wider than the width only where one character,
-  or an emoji sequence that stays whole, is wider than the room it
-  gets.
+- A line of a record is wider than the width only where one grapheme,
+  such as a wide character or an emoji, is wider than the room it gets.

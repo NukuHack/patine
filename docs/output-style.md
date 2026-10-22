@@ -9,8 +9,10 @@ All examples show the visual output, not the Markdown source.
 - Blank lines separate block-level elements (headings, paragraphs, lists,
   tables, code blocks, horizontal rules).
 - Long lines wrap at the terminal width.
-- A halfwidth sound mark, `ﾞ` or `ﾟ`, takes one column, as terminals
-  draw it.
+- Widths count grapheme by grapheme, as terminals and ratatui draw
+  text: the letters of a Lam-Alef `لا` take a column each, and a
+  halfwidth sound mark, `ﾞ` or `ﾟ`, takes one column. Control
+  characters keep their Unicode width.
 - Nested structures (lists, code blocks) are indented 2 spaces per level.
 - Wrapped continuation lines inside list items align past the bullet/number.
 
@@ -294,10 +296,10 @@ area   pane
   shows its name on a line of its own and its value under it, indented
   by two columns. A word wider than that room breaks either way, so it
   does not by itself stack the fields.
-- **Long words**: a word wider than its room breaks between characters
+- **Long words**: a word wider than its room breaks between graphemes
   and keeps its styles on every line, so a URL stays dim. A line is
-  wider than the width only where one character, or an emoji sequence
-  that stays whole, is wider than the room it gets.
+  wider than the width only where one grapheme, such as a wide
+  character or an emoji, is wider than the room it gets.
 - **Empty cells**: an empty header cell, or a column past the header's
   last cell, has an empty name; when every name is empty, values start
   at the left edge. A field whose cell is empty or missing shows its

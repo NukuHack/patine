@@ -11,6 +11,7 @@
 
 use std::fmt;
 
+use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 // =========================================================
@@ -170,17 +171,31 @@ const HALFWIDTH_SEMI_VOICED_SOUND_MARK: char = '\u{FF9F}';
 /// The columns `text` takes in a terminal. Every width patine lays out is
 /// measured here.
 ///
-/// This is the Unicode width of `text`, except that each halfwidth sound
-/// mark, `ﾞ` or `ﾟ`, takes one column. unicode-width gives them none, as
-/// they extend the grapheme before them, but terminals and ratatui draw
-/// each in a cell of its own. The combining sound marks U+3099 and U+309A
-/// keep their Unicode width.
+/// Terminals and ratatui draw text grapheme by grapheme, so this is the
+/// sum of the Unicode widths of the extended grapheme clusters of `text`.
+/// unicode-width gives some sequences of graphemes a width of their own:
+/// the Lam-Alef ligature `لا` is one column as a string, but its two
+/// graphemes are drawn in a column each.
+///
+/// Each halfwidth sound mark, `ﾞ` or `ﾟ`, takes one column more.
+/// unicode-width gives them none, as they extend the grapheme before
+/// them, but terminals and ratatui draw each in a cell of its own. The
+/// combining sound marks U+3099 and U+309A keep their Unicode width.
+///
+/// Control characters keep their Unicode width; a front end decides how
+/// to draw them.
 pub(crate) fn text_width(text: &str) -> usize {
-    let sound_marks = text
+    text.graphemes(true).map(grapheme_width).sum()
+}
+
+/// The columns one extended grapheme cluster takes, as [`text_width`]
+/// counts them.
+fn grapheme_width(grapheme: &str) -> usize {
+    let sound_marks = grapheme
         .chars()
         .filter(|&c| c == HALFWIDTH_VOICED_SOUND_MARK || c == HALFWIDTH_SEMI_VOICED_SOUND_MARK)
         .count();
-    UnicodeWidthStr::width(text) + sound_marks
+    UnicodeWidthStr::width(grapheme) + sound_marks
 }
 
 // =========================================================
@@ -209,8 +224,11 @@ impl StyledSpan {
         }
     }
 
-    /// Display width of the text in terminal columns. A halfwidth sound
-    /// mark, `ﾞ` or `ﾟ`, takes one column, as terminals draw it.
+    /// Display width of the text in terminal columns, counted grapheme by
+    /// grapheme as terminals and ratatui draw it: the letters of a
+    /// Lam-Alef `لا` take a column each, and a halfwidth sound mark, `ﾞ`
+    /// or `ﾟ`, takes one column. ratatui's own `Span::width` measures the
+    /// whole string with unicode-width and can differ.
     pub fn width(&self) -> usize {
         text_width(&self.text)
     }
@@ -414,6 +432,19 @@ mod tests {
         assert_eq!(
             StyledSpan::new("ｶ\u{3099}", TextStyle::default()).width(),
             1
+        );
+    }
+
+    #[test]
+    fn a_ligature_takes_a_column_per_grapheme() {
+        assert_eq!(StyledSpan::new("لا", TextStyle::default()).width(), 2);
+    }
+
+    #[test]
+    fn a_joined_ligature_takes_a_column_per_grapheme() {
+        assert_eq!(
+            StyledSpan::new("א\u{200D}ל", TextStyle::default()).width(),
+            2
         );
     }
 

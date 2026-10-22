@@ -1553,6 +1553,27 @@ fn a_table_with_halfwidth_sound_marks_fits_its_width() {
 }
 
 // =========================================================
+// Graphemes
+// =========================================================
+
+// Widths count grapheme by grapheme, as terminals draw them: the letters
+// of a Lam-Alef ligature take a column each.
+
+#[test]
+fn a_ligature_counts_a_column_per_letter_when_text_wraps() {
+    assert_eq!(plain_lines("لا لا", 4), ["لا", "لا"]);
+}
+
+#[test]
+fn a_flag_stays_whole_when_a_word_breaks() {
+    // Beside the name, 3 columns are left, and each flag takes 2.
+    assert_eq!(
+        plain_lines("| h |\n|---|\n| xx🇩🇪🇩🇪 |", 6),
+        ["h  xx", "   🇩🇪", "   🇩🇪"]
+    );
+}
+
+// =========================================================
 // Code blocks
 // =========================================================
 

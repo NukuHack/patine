@@ -528,6 +528,7 @@ dependencies = [
  "markdown",
  "syntect",
  "two-face",
+ "unicode-segmentation",
  "unicode-width",
 ]
 

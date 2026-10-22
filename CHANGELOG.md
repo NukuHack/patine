@@ -17,8 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   break a word that fits there. Eight columns of short words at width
   22 used to come out one letter wide. A word no longer breaks in a
   boxed table; in a record, a word wider than its room breaks between
-  characters, and a line is wider than the width only where a single
-  character is wider than the room it gets.
+  graphemes, and a line is wider than the width only where a single
+  grapheme is wider than the room it gets.
 
 ### Fixed
 
@@ -27,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   narrower than they show: a table cell of `ｶﾞ` six times, rendered at
   width 12, took 16 columns on screen. `StyledSpan::width` and
   `StyledLine::width` count the mark too.
+- Widths count grapheme by grapheme, as terminals and ratatui draw
+  text. unicode-width gives some ligatures one column as a string,
+  such as Lam-Alef `لا` and the Hebrew Alef-Lamed, where their letters
+  are drawn in a column each, so text holding one was laid out
+  narrower than it shows. A word broken between characters keeps every
+  grapheme whole, so a flag emoji is no longer cut in two. patine now
+  depends on `unicode-segmentation`.
 
 ## [1.7.2] - 2026-10-16
 

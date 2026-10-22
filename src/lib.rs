@@ -121,9 +121,10 @@ pub fn render_with(
 /// words and URLs longer than the width stay whole; code blocks and
 /// frontmatter never wrap. A table whose columns would have to break a
 /// word is laid out as records, one line per column; a value there
-/// breaks a word wider than its room between characters, and its line is
-/// wider only where a character, or an emoji sequence that stays whole,
-/// is wider than the room it gets.
+/// breaks a word wider than its room between graphemes, and its line is
+/// wider only where one grapheme, such as a wide character or an emoji,
+/// is wider than the room it gets. Widths count grapheme by grapheme, as
+/// terminals draw text.
 /// Line prefixes are spans of their own: indents are unstyled spaces and
 /// blockquote bars are `│ ` spans in the style
 /// [`RenderOptions::quote_style`] asks for. Blank lines have no
