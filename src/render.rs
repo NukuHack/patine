@@ -3,11 +3,11 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use markdown::mdast::Node;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_width::UnicodeWidthChar;
 
 use crate::line_endings::{split_line_endings, verbatim_lines};
 use crate::options::{Html, QuoteStyle, RenderOptions, SoftBreaks};
-use crate::styled::{AnsiColor, StyledLine, TextStyle, Underline};
+use crate::styled::{AnsiColor, StyledLine, TextStyle, Underline, text_width};
 
 /// Columns of indent for one level of nesting: a code block, or a block
 /// nested in a list item.
@@ -340,7 +340,7 @@ impl Renderer {
         for line in verbatim_lines(value) {
             self.write_indent();
             self.emit(line);
-            self.column = UnicodeWidthStr::width(line);
+            self.column = text_width(line);
             self.mark_drawn();
             self.write_newline();
         }
@@ -357,7 +357,7 @@ impl Renderer {
             let mut column: usize = 0;
             for span in &line.spans {
                 self.line.push_str(&span.text, base.patch(span.style));
-                column += UnicodeWidthStr::width(span.text.as_str());
+                column += text_width(&span.text);
             }
             self.column = column;
             self.mark_drawn();
@@ -455,7 +455,7 @@ impl Renderer {
         if done {
             self.pop_style();
         }
-        let prefix_width = UnicodeWidthStr::width(prefix.as_str());
+        let prefix_width = text_width(&prefix);
         self.column += prefix_width;
         self.text_start = self.column;
         self.mark_drawn();
@@ -584,7 +584,7 @@ impl Renderer {
         for line in split_line_endings(html) {
             self.write_indent();
             self.emit(line);
-            self.column = UnicodeWidthStr::width(line);
+            self.column = text_width(line);
             self.mark_drawn();
             self.write_newline();
         }
@@ -887,7 +887,7 @@ impl Renderer {
             .iter()
             .map(|segment| match segment {
                 Segment::Nest(width) => *width,
-                Segment::Quote => UnicodeWidthStr::width(BLOCKQUOTE_BAR),
+                Segment::Quote => text_width(BLOCKQUOTE_BAR),
                 Segment::Item { .. } => 0,
             })
             .sum();
@@ -1103,6 +1103,8 @@ impl Renderer {
 /// after a zero width joiner, and emoji skin tone modifiers.
 /// unicode-width gives such a sequence, `⚠️` or a family emoji, a width
 /// of its own that its parts do not add up to, so a unit is never cut.
+/// unicode-width gives a halfwidth sound mark no width, so `ｶﾞ` is one
+/// unit, two columns wide as [`text_width`] measures it.
 ///
 /// This is not full grapheme segmentation: the two letters of a flag
 /// emoji, for example, are separate units.

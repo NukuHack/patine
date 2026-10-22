@@ -159,6 +159,31 @@ impl TextStyle {
 }
 
 // =========================================================
+// Width
+// =========================================================
+
+/// Halfwidth Katakana Voiced Sound Mark, `ﾞ`.
+const HALFWIDTH_VOICED_SOUND_MARK: char = '\u{FF9E}';
+/// Halfwidth Katakana Semi-Voiced Sound Mark, `ﾟ`.
+const HALFWIDTH_SEMI_VOICED_SOUND_MARK: char = '\u{FF9F}';
+
+/// The columns `text` takes in a terminal. Every width patine lays out is
+/// measured here.
+///
+/// This is the Unicode width of `text`, except that each halfwidth sound
+/// mark, `ﾞ` or `ﾟ`, takes one column. unicode-width gives them none, as
+/// they extend the grapheme before them, but terminals and ratatui draw
+/// each in a cell of its own. The combining sound marks U+3099 and U+309A
+/// keep their Unicode width.
+pub(crate) fn text_width(text: &str) -> usize {
+    let sound_marks = text
+        .chars()
+        .filter(|&c| c == HALFWIDTH_VOICED_SOUND_MARK || c == HALFWIDTH_SEMI_VOICED_SOUND_MARK)
+        .count();
+    UnicodeWidthStr::width(text) + sound_marks
+}
+
+// =========================================================
 // Spans and lines
 // =========================================================
 
@@ -184,9 +209,10 @@ impl StyledSpan {
         }
     }
 
-    /// Display width of the text in terminal columns.
+    /// Display width of the text in terminal columns. A halfwidth sound
+    /// mark, `ﾞ` or `ﾟ`, takes one column, as terminals draw it.
     pub fn width(&self) -> usize {
-        UnicodeWidthStr::width(self.text.as_str())
+        text_width(&self.text)
     }
 }
 
@@ -215,7 +241,8 @@ impl StyledLine {
         Self { spans }
     }
 
-    /// Display width of the line in terminal columns.
+    /// Display width of the line in terminal columns, the sum of its
+    /// spans' widths.
     pub fn width(&self) -> usize {
         self.spans.iter().map(StyledSpan::width).sum()
     }
@@ -367,6 +394,26 @@ mod tests {
                     style: TextStyle::default(),
                 },
             ]
+        );
+    }
+
+    // ── Widths ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn a_halfwidth_sound_mark_takes_a_column() {
+        assert_eq!(StyledSpan::new("ｶﾞ", TextStyle::default()).width(), 2);
+    }
+
+    #[test]
+    fn a_halfwidth_semi_voiced_sound_mark_takes_a_column() {
+        assert_eq!(StyledSpan::new("ﾟ", TextStyle::default()).width(), 1);
+    }
+
+    #[test]
+    fn a_combining_sound_mark_takes_no_column() {
+        assert_eq!(
+            StyledSpan::new("ｶ\u{3099}", TextStyle::default()).width(),
+            1
         );
     }
 

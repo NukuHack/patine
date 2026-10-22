@@ -1351,6 +1351,27 @@ fn wide_characters_in_a_cell_wrap_by_display_width() {
 }
 
 // =========================================================
+// Halfwidth sound marks
+// =========================================================
+
+// A halfwidth sound mark such as `ﾞ` takes a column of its own, as
+// terminals draw it. Every character in these inputs takes one cell on
+// screen, so counting characters measures a line as the screen shows it.
+
+#[test]
+fn halfwidth_sound_marks_count_when_text_wraps() {
+    assert_eq!(plain_lines("ｶﾞｶﾞ ｶﾞｶﾞ", 8), ["ｶﾞｶﾞ", "ｶﾞｶﾞ"]);
+}
+
+#[test]
+fn a_table_with_halfwidth_sound_marks_fits_its_width() {
+    let lines = plain_lines("| a | b |\n|--|--|\n| x | ｶﾞｶﾞｶﾞｶﾞｶﾞｶﾞ |", 12);
+    for line in &lines {
+        assert!(line.chars().count() <= 12, "{lines:#?}");
+    }
+}
+
+// =========================================================
 // Code blocks
 // =========================================================
 

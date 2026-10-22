@@ -9,6 +9,8 @@ All examples show the visual output, not the Markdown source.
 - Blank lines separate block-level elements (headings, paragraphs, lists,
   tables, code blocks, horizontal rules).
 - Long lines wrap at the terminal width.
+- A halfwidth sound mark, `ﾞ` or `ﾟ`, takes one column, as terminals
+  draw it.
 - Nested structures (lists, code blocks) are indented 2 spaces per level.
 - Wrapped continuation lines inside list items align past the bullet/number.
 
