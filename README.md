@@ -46,7 +46,7 @@ patine --width 100 README.md
 - **Links**: underlined text, URL in dimmed parentheses unless the text is the URL, as in autolinks
 - **Images**: `[image: alt text]` with the path/URL dimmed
 - **Lists**: ordered, unordered and task lists (`☐`/`☑`), with arbitrary nesting
-- **Tables**: Unicode box-drawing borders, bold headers, inline formatting in cells as in running text, column alignment from the delimiter row, row separators
+- **Tables**: Unicode box-drawing borders, bold headers, inline formatting in cells as in running text, column alignment from the delimiter row, row separators; a table whose columns would have to break a word is laid out as records, one line per column with its bold header name and the cell's text
 - **Blockquotes**: `│` bar prefix in cyan, text in its normal style, nested support
 - **Horizontal rules**: `─` spanning the terminal width
 - **Word wrapping**: at terminal width (overridable with `--width`)

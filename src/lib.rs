@@ -119,8 +119,11 @@ pub fn render_with(
 ///
 /// Text wraps at `width`. Lines may still be wider: in running text,
 /// words and URLs longer than the width stay whole; code blocks and
-/// frontmatter never wrap; a table overflows only when not even one
-/// character per column fits (its long words break between characters).
+/// frontmatter never wrap. A table whose columns would have to break a
+/// word is laid out as records, one line per column; a value there
+/// breaks a word wider than its room between characters, and its line is
+/// wider only where a character, or an emoji sequence that stays whole,
+/// is wider than the room it gets.
 /// Line prefixes are spans of their own: indents are unstyled spaces and
 /// blockquote bars are `│ ` spans in the style
 /// [`RenderOptions::quote_style`] asks for. Blank lines have no

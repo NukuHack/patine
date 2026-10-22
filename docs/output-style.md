@@ -108,9 +108,10 @@ See https://example.com for details.
 
 The dimmed `(url)` block is treated as one atomic unit when wrapping. If
 it doesn't fit alongside the link text on the current line, the whole
-`(url)` block moves to a fresh line — outside table cells, the URL
-itself is never broken mid-string so it remains copy-pasteable. In a
-table cell that would not fit otherwise, it breaks (see Tables).
+`(url)` block moves to a fresh line — the URL itself is never broken
+mid-string so it remains copy-pasteable. Only in a value of a table
+laid out as records, when it is wider than its room, does it break (see
+Records under Tables).
 
 ## Ordered Lists
 
@@ -196,8 +197,11 @@ the same place.
 ## Tables
 
 Tables use full Unicode box-drawing characters with single-line borders.
+A table whose columns would have to break a word is laid out as records
+instead (see Records).
 
-- **Alignment**: a column follows its delimiter row: `:--` left, `:-:`
+- **Alignment**: a column of a boxed table follows its delimiter row:
+  `:--` left, `:-:`
   centered, `--:` right, for header and data cells alike. A column
   without a colon has its header **centered** and its data
   **left-aligned**. Alignment applies per wrapped line when cell text
@@ -209,21 +213,17 @@ Tables use full Unicode box-drawing characters with single-line borders.
   color, links underlined with their dimmed `(url)`, images as
   `[image: alt]` with their dimmed path. A cell wraps like running
   text: a line breaks at whitespace and in front of a `(url)`, so glued
-  pieces such as `**bold**,` stay together. A word wider than its
-  column is broken between characters only when the table would not fit
-  otherwise (see Column width), and keeps its styles on every line.
+  pieces such as `**bold**,` stay together. A word never breaks in a
+  boxed table.
 - **Data rows**: 1 space padding on each side.
 - **Separators**: horizontal rules between the header and every data row.
 - **Column width**: a three-tier algorithm. (1) If the natural cell
   widths fit within the available terminal width, use them. (2)
   Otherwise, distribute the available width proportionally between each
   column's minimum (the widest unbreakable token in that column) and
-  its natural width. (3) If even the per-column minimums don't fit, the
-  columns with the longest words shrink, the widest first, until the
-  table fits, and their long words break across lines between
-  characters; columns whose words fit keep them whole. A column never
-  gets narrower than its widest character, so a table overflows only
-  when not even one character per column fits.
+  its natural width. (3) If even the per-column minimums don't fit, a
+  column would get narrower than its widest word, and the table is laid
+  out as records.
 - **Row height**: each cell is word-wrapped to its allocated column
   width, and the row height is the max wrapped height across its cells.
   Shorter cells are blank-padded on the extra lines so the row aligns
@@ -256,6 +256,57 @@ Box-drawing characters used:
 | Cross          | `┼`       |
 | Horizontal     | `─`       |
 | Vertical       | `│`       |
+
+### Records
+
+A table is laid out as records as soon as one of its columns would get
+narrower than the widest word of its cells, so that a word would have to
+break. A long URL is a word like any other. Each data row becomes a
+record, each column a field: the column's name from the header row, in
+**bold** on top of its own styles, then the row's cell. A rule of `─`
+across the width separates two records.
+
+```
+step   retry
+owner  jaw
+doc    policy
+due    11-02
+state  open
+prio   high
+team   core
+area   queue
+──────────────────────
+step   backoff
+owner  ana
+doc    notes
+due    11-09
+state  done
+prio   low
+team   tui
+area   pane
+```
+
+- **Side by side**: the names are padded to the widest name, and the
+  values start two columns after it. A value wraps like running text in
+  the room left, its further lines under its first.
+- **Stacked**: when the room beside the names would break a word or a
+  character that fits the room under them, every field of the table
+  shows its name on a line of its own and its value under it, indented
+  by two columns. A word wider than that room breaks either way, so it
+  does not by itself stack the fields.
+- **Long words**: a word wider than its room breaks between characters
+  and keeps its styles on every line, so a URL stays dim. A line is
+  wider than the width only where one character, or an emoji sequence
+  that stays whole, is wider than the room it gets.
+- **Empty cells**: an empty header cell, or a column past the header's
+  last cell, has an empty name; when every name is empty, values start
+  at the left edge. A field whose cell is empty or missing shows its
+  name alone. Every record has the same lines in the same order, so a
+  field without a name or a value is a blank line.
+- **Header only**: a table without data rows shows its names, one per
+  line.
+- **Alignment** from the delimiter row does not apply; names and values
+  are left-aligned.
 
 ## Code Blocks (Fenced)
 
@@ -366,7 +417,8 @@ If no alt text is provided:
 The dimmed `(url)` block follows the same atomic-wrapping rule as for
 links: if it doesn't fit alongside the image marker on the current
 line, it moves to a fresh line below rather than being broken
-mid-string, except in a table cell (see Tables).
+mid-string, except in a value of a table laid out as records (see
+Tables).
 
 ## Style Summary
 

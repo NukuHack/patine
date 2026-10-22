@@ -901,38 +901,6 @@ fn table_preserves_column_proportions() {
 }
 
 #[test]
-fn table_breaks_long_words_when_their_minimums_exceed_the_budget() {
-    // Each column contains a single long word, and even one word per
-    // column does not fit 10 columns. The words break between characters
-    // so that the table fits, and each column still holds its word.
-    let md = "\
-| Col1 | Col2 |
-|---|---|
-| antidisestablishmentarianism | supercalifragilisticexpialidocious |";
-    let lines = plain_lines(md, 10);
-    for line in &lines {
-        assert_eq!(line.chars().count(), 10, "{lines:#?}");
-    }
-    let separator = lines
-        .iter()
-        .position(|line| line.starts_with('├'))
-        .expect("separator");
-    let mut columns = [String::new(), String::new()];
-    for line in &lines[separator + 1..lines.len() - 1] {
-        let cells: Vec<&str> = line.split('│').collect();
-        columns[0].push_str(cells[1].trim());
-        columns[1].push_str(cells[2].trim());
-    }
-    assert_eq!(
-        columns,
-        [
-            "antidisestablishmentarianism",
-            "supercalifragilisticexpialidocious"
-        ]
-    );
-}
-
-#[test]
 fn table_header_centered_with_wrapping() {
     // A long header name forced to wrap to a narrow column. The header
     // cell must span more than one visual line (= wrapping happened),
@@ -1235,96 +1203,309 @@ fn whitespace_runs_in_a_cell_do_not_widen_its_column() {
 }
 
 // =========================================================
-// Words wider than their column
+// Tables laid out as records
 // =========================================================
 
-// When even the widest words of the columns do not fit the width, the
-// columns with the longest words shrink and those words break between
-// characters, so the table stays whole. Running text keeps its words.
+// A table whose columns would get narrower than the widest word of their
+// cells is laid out as records: one record per data row, one line per
+// column with its name from the header row and then the cell's text, and
+// a rule across the width between records. A boxed table never breaks a
+// word.
 
-/// The repro of the overflow: a long URL in a cell at width 40.
+/// Eight columns of short words, which need 66 columns as a boxed table.
+const EIGHT_COLUMNS: &str = "\
+| step | owner | doc | due | state | prio | team | area |
+|--|--|--|--|--|--|--|--|
+| retry | jaw | policy | 11-02 | open | high | core | queue |
+| backoff | ana | notes | 11-09 | done | low | tui | pane |";
+
+#[test]
+fn table_lays_out_as_records_when_a_word_would_break() {
+    assert_eq!(
+        plain_lines(EIGHT_COLUMNS, 22),
+        [
+            "step   retry",
+            "owner  jaw",
+            "doc    policy",
+            "due    11-02",
+            "state  open",
+            "prio   high",
+            "team   core",
+            "area   queue",
+            "──────────────────────",
+            "step   backoff",
+            "owner  ana",
+            "doc    notes",
+            "due    11-09",
+            "state  done",
+            "prio   low",
+            "team   tui",
+            "area   pane",
+        ]
+    );
+}
+
+#[test]
+fn records_start_where_a_column_would_get_narrower_than_its_widest_word() {
+    let md = "| a | b |\n|--|--|\n| xxxxx | yyyyy |";
+    // The widest words take 10 columns and the borders 7.
+    assert!(plain_lines(md, 17)[0].starts_with('┌'));
+    assert_eq!(plain_lines(md, 16), ["a  xxxxx", "b  yyyyy"]);
+}
+
+#[test]
+fn record_names_are_bold_over_their_own_styles() {
+    assert_eq!(
+        serialize(&render_lines("| *n* | m |\n|--|--|\n| v | w |", 6)),
+        "[bold,italic]n[]  v\n[bold]m[]  w\n"
+    );
+}
+
+#[test]
+fn a_long_value_wraps_under_its_value() {
+    assert_eq!(
+        plain_lines(
+            "| step | note |\n|--|--|\n| retry | waits for the queue to drain before it tries again |",
+            16
+        ),
+        [
+            "step  retry",
+            "note  waits for",
+            "      the queue",
+            "      to drain",
+            "      before it",
+            "      tries",
+            "      again",
+        ]
+    );
+}
+
+#[test]
+fn records_stack_when_side_by_side_would_break_a_word() {
+    // Beside the names, 5 columns are left: `policy` and `backoff` would
+    // break there, and fit under their names.
+    assert_eq!(
+        plain_lines(EIGHT_COLUMNS, 12),
+        [
+            "step",
+            "  retry",
+            "owner",
+            "  jaw",
+            "doc",
+            "  policy",
+            "due",
+            "  11-02",
+            "state",
+            "  open",
+            "prio",
+            "  high",
+            "team",
+            "  core",
+            "area",
+            "  queue",
+            "────────────",
+            "step",
+            "  backoff",
+            "owner",
+            "  ana",
+            "doc",
+            "  notes",
+            "due",
+            "  11-09",
+            "state",
+            "  done",
+            "prio",
+            "  low",
+            "team",
+            "  tui",
+            "area",
+            "  pane",
+        ]
+    );
+}
+
+#[test]
+fn records_stack_when_side_by_side_would_break_a_wide_character() {
+    // Beside the name, one column is left, narrower than each character.
+    assert_eq!(
+        plain_lines("| Beschreibung |\n|---|\n| 日本語のテキストです |", 15),
+        ["Beschreibung", "  日本語のテキ", "  ストです"]
+    );
+}
+
+/// A long URL in a cell, which needs 66 columns as a boxed table.
 const LONG_URL_TABLE: &str = "| step | doc |\n|---|---|\n| retry | see [the policy](https://example.com/handbook/operations/retry-policy) |";
 
 #[test]
-fn long_url_in_a_cell_breaks_to_fit_the_width() {
+fn a_value_word_wider_than_any_room_breaks_beside_its_name() {
+    // The URL is wider than the full width as well, so it breaks beside
+    // its name rather than under it.
     assert_eq!(
-        table_rows(LONG_URL_TABLE, 40),
+        plain_lines(LONG_URL_TABLE, 40),
         [
-            "│ step  │             doc              │",
-            "│ retry │ see the policy               │",
-            "│       │ (https://example.com/handboo │",
-            "│       │ k/operations/retry-policy)   │",
+            "step  retry",
+            "doc   see the policy",
+            "      (https://example.com/handbook/oper",
+            "      ations/retry-policy)",
         ]
     );
     for line in render_lines(LONG_URL_TABLE, 40) {
-        assert_eq!(line.width(), 40, "{line}");
+        assert!(line.width() <= 40, "{line}");
     }
 }
 
 #[test]
-fn broken_url_stays_dim() {
+fn a_broken_url_in_a_record_stays_dim() {
     assert_eq!(
-        styled_table_rows(LONG_URL_TABLE, 40)[2..],
+        serialize(&render_lines(LONG_URL_TABLE, 40))
+            .lines()
+            .skip(2)
+            .collect::<Vec<_>>(),
         [
-            "│       │ [dim](https://example.com/handboo[] │",
-            "│       │ [dim]k/operations/retry-policy)[]   │",
+            "      [dim](https://example.com/handbook/oper[]",
+            "      [dim]ations/retry-policy)[]",
         ]
     );
 }
 
 #[test]
-fn broken_header_word_stays_bold() {
-    // Width 9 leaves 5 columns for the cell.
+fn a_broken_name_stays_bold() {
+    // No room is left beside the name, so it stands on lines of its own.
     assert_eq!(
-        styled_table_rows("| aaaaaaaaaa |\n|---|\n| b |", 9),
-        ["│ [bold]aaaaa[] │", "│ [bold]aaaaa[] │", "│ b     │"]
+        serialize(&render_lines("| aaaaaaaaaa |\n|---|\n| b |", 9)),
+        "[bold]aaaaaaaaa[]\n[bold]a[]\n  b\n"
+    );
+}
+
+#[test]
+fn an_empty_header_cell_gives_an_empty_name() {
+    assert_eq!(
+        plain_lines("| a | | c |\n|--|--|--|\n| 1 | 2 | 3 |", 10),
+        ["a  1", "   2", "c  3"]
+    );
+}
+
+#[test]
+fn a_cell_past_the_header_has_an_empty_name() {
+    assert_eq!(
+        plain_lines("| a |\n|--|\n| xxxxx | yy |", 8),
+        ["a  xxxxx", "   yy"]
+    );
+}
+
+#[test]
+fn values_start_at_the_edge_when_every_name_is_empty() {
+    assert_eq!(
+        plain_lines("| | |\n|--|--|\n| xxxx | yyyy |", 10),
+        ["xxxx", "yyyy"]
+    );
+}
+
+#[test]
+fn a_missing_cell_shows_its_name_alone() {
+    // Every record has the same lines, so a field without a name or a
+    // value is a blank line.
+    assert_eq!(
+        plain_lines("| a | | c |\n|--|--|--|\n| 1 | 2 | 3 |\n| 4 |", 10),
+        ["a  1", "   2", "c  3", "──────────", "a  4", "", "c"]
+    );
+}
+
+#[test]
+fn a_table_without_data_rows_lays_out_its_names() {
+    assert_eq!(
+        plain_lines("| step | owner |\n|--|--|", 10),
+        ["step", "owner"]
+    );
+}
+
+#[test]
+fn records_in_a_blockquote_carry_the_bars() {
+    assert_eq!(
+        plain_lines(
+            "> | a | b |\n> |--|--|\n> | xxxxx | yyyyy |\n> | z | w |",
+            12
+        ),
+        [
+            "│ a  xxxxx",
+            "│ b  yyyyy",
+            "│ ──────────",
+            "│ a  z",
+            "│ b  w"
+        ]
+    );
+}
+
+#[test]
+fn a_value_word_wider_than_its_room_breaks_between_characters() {
+    assert_eq!(
+        plain_lines(
+            "| Col1 | Col2 |\n|---|---|\n| antidisestablishmentarianism | supercalifragilisticexpialidocious |",
+            10
+        ),
+        [
+            "Col1  anti",
+            "      dise",
+            "      stab",
+            "      lish",
+            "      ment",
+            "      aria",
+            "      nism",
+            "Col2  supe",
+            "      rcal",
+            "      ifra",
+            "      gili",
+            "      stic",
+            "      expi",
+            "      alid",
+            "      ocio",
+            "      us",
+        ]
     );
 }
 
 #[test]
 fn wide_characters_break_between_characters() {
-    // Width 9 leaves 5 columns: two wide characters fit, a third does not.
     assert_eq!(
-        table_rows("| h |\n|---|\n| 日本語日本語 |", 9),
-        ["│   h   │", "│ 日本  │", "│ 語日  │", "│ 本語  │"]
+        plain_lines("| h |\n|---|\n| 日本語日本語 |", 9),
+        ["h  日本語", "   日本語"]
     );
 }
 
 #[test]
 fn emoji_sequences_stay_whole_when_a_word_breaks() {
-    // Width 6 leaves 2 columns, the width of each of these emoji.
+    // Beside the name, 3 columns are left, and each emoji takes 2.
     assert_eq!(
-        table_rows("| h |\n|---|\n| x\u{26A0}\u{FE0F} |", 6),
-        ["│ h  │", "│ x  │", "│ \u{26A0}\u{FE0F} │"]
+        plain_lines("| h |\n|---|\n| xx\u{26A0}\u{FE0F}\u{26A0}\u{FE0F} |", 6),
+        ["h  xx", "   \u{26A0}\u{FE0F}", "   \u{26A0}\u{FE0F}"]
     );
     let family = "\u{1F469}\u{200D}\u{1F469}\u{200D}\u{1F467}";
     assert_eq!(
-        table_rows(&format!("| h |\n|---|\n| x{family} |"), 6),
+        plain_lines(&format!("| h |\n|---|\n| xx{family}{family} |"), 6),
         [
-            "│ h  │".to_string(),
-            "│ x  │".to_string(),
-            format!("│ {family} │")
+            "h  xx".to_string(),
+            format!("   {family}"),
+            format!("   {family}")
         ]
     );
     // A combining accent stays with its letter.
     assert_eq!(
-        table_rows("| h |\n|---|\n| xe\u{301}y |", 5),
-        ["│ h │", "│ x │", "│ e\u{301} │", "│ y │"]
+        plain_lines("| h |\n|---|\n| xxe\u{301}yy |", 6),
+        ["h  xxe\u{301}", "   yy"]
     );
 }
 
 #[test]
-fn table_overflows_only_below_one_unit_per_column() {
-    // Width 6 leaves no column at all for the cells: each column gets the
-    // width of its widest character, and the table overflows.
+fn a_record_line_is_wider_only_for_a_character_wider_than_its_room() {
+    let letters = "| h | i |\n|---|---|\n| abc | de |";
+    assert_eq!(plain_lines(letters, 1), ["h", "a", "b", "c", "i", "d", "e"]);
     assert_eq!(
-        table_rows("| h | i |\n|---|---|\n| abc | de |", 6),
-        ["│ h │ i │", "│ a │ d │", "│ b │ e │", "│ c │   │"]
+        plain_lines(letters, 2),
+        ["h", " a", " b", " c", "i", " d", " e"]
     );
-    assert_eq!(
-        table_rows("| h | i |\n|---|---|\n| 日本 | x |", 6),
-        ["│ h  │ i │", "│ 日 │ x │", "│ 本 │   │"]
-    );
+    let wide = "| h | i |\n|---|---|\n| 日本 | x |";
+    assert_eq!(plain_lines(wide, 1), ["h", "日", "本", "i", "x"]);
+    assert_eq!(plain_lines(wide, 2), ["h", " 日", " 本", "i", " x"]);
 }
 
 #[test]

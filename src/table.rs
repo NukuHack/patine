@@ -75,12 +75,9 @@ fn widest(lines: &[StyledLine]) -> usize {
 /// willing to give the table (typically `Renderer::effective_width`
 /// after subtracting nesting and blockquote prefixes). The layout pass
 /// uses it to shrink wide tables down via proportional column
-/// distribution and cell wrapping. When even the widest words of the
-/// columns do not fit, the columns with the longest words shrink further
-/// and those words break between characters. Only when not even the
-/// widest character of each column fits is the table rendered wider
-/// than `available_width` — the caller is expected to tolerate this,
-/// same as the long-URL-on-its-own-line behavior of running text.
+/// distribution and cell wrapping. A boxed table never breaks a word:
+/// when a column would get narrower than the widest word of its cells,
+/// the table is laid out as records instead (see [`layout_records`]).
 ///
 /// `render_cell` lays out the inline content of a cell as running text
 /// of the given width, so a cell keeps its inline styles and wraps where
@@ -89,7 +86,7 @@ fn widest(lines: &[StyledLine]) -> usize {
 /// top of those styles. The caller lays its own context style over these
 /// spans.
 ///
-/// Layout rules:
+/// Layout rules of the boxed table:
 ///   - A column follows the alignment of its delimiter row (`:--` left,
 ///     `:-:` centered, `--:` right), header and data cells alike. A
 ///     column without one has its header **centered** and its data
@@ -98,10 +95,9 @@ fn widest(lines: &[StyledLine]) -> usize {
 ///   - Cells have one space padding on each side.
 ///   - Horizontal separators appear between every pair of adjacent
 ///     rows.
-///   - Column widths are sized to fit within `available_width` when
-///     possible, shrinking proportionally toward each column's minimum
-///     (widest word that cannot break), and below it only as far as the
-///     table needs (see [`distribute_widths`]).
+///   - Column widths are sized to fit within `available_width`,
+///     shrinking proportionally toward each column's minimum (widest
+///     word that cannot break), see [`distribute_widths`].
 ///
 /// An empty table (no rows) yields an empty `Vec`; the caller is
 /// expected to treat that as "nothing to render".
@@ -120,38 +116,26 @@ pub fn layout_table(
         return Vec::new();
     }
 
-    // ── Measure per-column natural, minimum and smallest widths ─────────
-    // `natural`[i]  = width of the widest cell in column i laid out on one
-    //                 line (what we'd use if space were unlimited).
-    // `minimum`[i]  = width of the widest word in any cell in column i
-    //                 that cannot break — the floor below which wrapping
-    //                 alone cannot shrink the column; narrower, a word has
-    //                 to break. Laid out one column wide without breaking,
-    //                 a cell puts every such word on a line of its own.
-    // `smallest`[i] = width of the widest piece a word breaks into in any
-    //                 cell in column i (a character, or an emoji sequence
-    //                 that stays whole): the floor below which nothing
-    //                 can shrink the column. Laid out one column wide with
-    //                 breaking, a cell puts every such piece on a line of
-    //                 its own.
-    // All are floored at 1 so that a column of empty cells still has a
-    // visible, paddable slot, and `smallest` never exceeds `minimum`: a
-    // word broken into pieces is never wider than the word.
+    // ── Measure per-column natural and minimum widths ───────────────────
+    // `natural`[i] = width of the widest cell in column i laid out on one
+    //                line (what we'd use if space were unlimited).
+    // `minimum`[i] = width of the widest word in any cell in column i
+    //                that cannot break — the floor below which a word in
+    //                the column would have to break. Laid out one column
+    //                wide without breaking, a cell puts every such word on
+    //                a line of its own.
+    // Both are floored at 1 so that a column of empty cells still has a
+    // visible, paddable slot.
     let mut natural: Vec<usize> = vec![0; num_cols];
     let mut minimum: Vec<usize> = vec![0; num_cols];
-    let mut smallest: Vec<usize> = vec![0; num_cols];
     for row in &rows {
         for (i, cell) in row.iter().enumerate() {
             natural[i] = natural[i].max(widest(&render_cell(cell, UNLIMITED, LongWords::Overflow)));
             minimum[i] = minimum[i].max(widest(&render_cell(cell, 1, LongWords::Overflow)));
-            smallest[i] = smallest[i].max(widest(&render_cell(cell, 1, LongWords::Break)));
         }
     }
     for m in &mut minimum {
         *m = (*m).max(1);
-    }
-    for (s, m) in smallest.iter_mut().zip(&minimum) {
-        *s = (*s).clamp(1, *m);
     }
     // A column cannot be asked to render narrower than its minimum.
     for i in 0..num_cols {
@@ -160,24 +144,31 @@ pub fn layout_table(
         }
     }
 
-    // ── Compute the column budget and distribute widths ─────────────────
+    // ── Compute the column budget ───────────────────────────────────────
     // The table's total line width is sum(col_widths) + 3*num_cols + 1
     // (see PER_CELL_OVERHEAD / TRAILING_BORDER). Solve for how much
     // budget is available for cell content given the terminal width.
+    // When the widest words do not fit it, some column would get narrower
+    // than its widest word and that word would break: the table becomes
+    // records instead.
     let border_overhead = PER_CELL_OVERHEAD * num_cols + TRAILING_BORDER;
     let content_budget = available_width.saturating_sub(border_overhead);
-    let col_widths = distribute_widths(&natural, &minimum, &smallest, content_budget);
+    if minimum.iter().sum::<usize>() > content_budget {
+        return layout_records(&rows, num_cols, available_width, &render_cell);
+    }
+    let col_widths = distribute_widths(&natural, &minimum, content_budget);
 
     // ── Wrap each cell to its allocated column width ────────────────────
     // Each cell becomes its wrapped lines. Row height is the max cell
     // height; shorter cells, and cells that draw nothing, are rendered
-    // blank on the extra lines so the whole row aligns vertically.
+    // blank on the extra lines so the whole row aligns vertically. No
+    // column is narrower than its widest word, so no word overflows.
     let wrapped_rows: Vec<Vec<Vec<StyledLine>>> = rows
         .iter()
         .map(|row| {
             (0..num_cols)
                 .map(|i| match row.get(i) {
-                    Some(cell) => render_cell(cell, col_widths[i], LongWords::Break),
+                    Some(cell) => render_cell(cell, col_widths[i], LongWords::Overflow),
                     None => Vec::new(),
                 })
                 .collect()
@@ -221,25 +212,18 @@ pub fn layout_table(
 
 /// Distribute `budget` columns across a set of columns, respecting
 /// each column's minimum width and shrinking proportionally away from
-/// its natural width.
+/// its natural width. The minimums must fit `budget`; a table whose
+/// minimums do not is laid out as records.
 ///
 /// Rules:
 /// 1. If the natural widths already fit within `budget`, return them
 ///    unchanged (fast path — tables that fit don't shrink).
 /// 2. Otherwise, seed every column with its `minimum` width.
-/// 3. If even the minimums reach `budget`, shrink the columns with the
-///    longest words below their minimum, down to their `smallest` width
-///    (see [`shrink_below_minimums`]); their words then break.
-/// 4. Otherwise, distribute `leftover = budget - sum(minimums)` on top
-///    of each column proportionally to its "want" (`natural[i] -
-///    minimum[i]`). Any rounding remainder is given out round-robin to
-///    columns still below their natural width.
-fn distribute_widths(
-    natural: &[usize],
-    minimum: &[usize],
-    smallest: &[usize],
-    budget: usize,
-) -> Vec<usize> {
+/// 3. Distribute `leftover = budget - sum(minimums)` on top of each
+///    column proportionally to its "want" (`natural[i] - minimum[i]`).
+///    Any rounding remainder is given out round-robin to columns still
+///    below their natural width.
+fn distribute_widths(natural: &[usize], minimum: &[usize], budget: usize) -> Vec<usize> {
     let num_cols = natural.len();
     debug_assert_eq!(num_cols, minimum.len());
 
@@ -249,11 +233,9 @@ fn distribute_widths(
     }
 
     let minimum_sum: usize = minimum.iter().sum();
-    if minimum_sum >= budget {
-        return shrink_below_minimums(minimum, smallest, budget);
-    }
+    debug_assert!(minimum_sum <= budget, "the minimums fit the budget");
 
-    // At this point sum(minimum) < budget < sum(natural). We have
+    // At this point sum(minimum) <= budget < sum(natural). We have
     // `leftover` columns of budget above the minimums to distribute
     // among columns that "want" more (natural > minimum).
     let leftover = budget - minimum_sum;
@@ -300,57 +282,172 @@ fn distribute_widths(
     result
 }
 
-/// Fit columns into `budget` when their `minimum` widths, the widest
-/// words that cannot break, do not fit: the columns with the longest
-/// words give up width first, and only as much as the table needs.
-///
-/// Every column is cut to a common cap, the largest at which the table
-/// fits, but never below its `smallest` width, the widest piece a word
-/// breaks into. A column whose words all fit under the cap keeps its
-/// minimum, so its words stay whole. The columns left over after the cap
-/// go one each, left to right, to the columns at the cap. With the
-/// minimums summing to exactly `budget`, they are returned unchanged.
-///
-/// When not even the `smallest` widths fit, they are returned and the
-/// table overflows: no column can get narrower than one piece of a word.
-fn shrink_below_minimums(minimum: &[usize], smallest: &[usize], budget: usize) -> Vec<usize> {
-    if smallest.iter().sum::<usize>() >= budget {
-        return smallest.to_vec();
-    }
+// =========================================================
+// Records
+// =========================================================
 
-    let capped = |cap: usize| -> Vec<usize> {
-        minimum
-            .iter()
-            .zip(smallest)
-            .map(|(&m, &s)| cap.min(m).max(s))
-            .collect()
+/// The style of a record's names on top of their own styles: bold, as
+/// the header row of a boxed table.
+const NAME_STYLE: TextStyle = HEADER_STYLE;
+
+/// The rule drawn across the width between two records.
+const RULE: &str = HORIZONTAL;
+
+/// The style of that rule: plain, as the borders of a boxed table.
+const RULE_STYLE: TextStyle = TextStyle {
+    bold: false,
+    italic: false,
+    dim: false,
+    strikethrough: false,
+    underline: crate::styled::Underline::None,
+    foreground: None,
+};
+
+/// Columns between the widest name and the values beside it.
+const RECORD_GAP: usize = 2;
+
+/// Columns a value is indented by under its name.
+const STACKED_INDENT: usize = 2;
+
+/// Lay out a table that does not fit as a box as records, `width`
+/// columns wide: one record per data row, one field per column, and a
+/// rule across the width between records. A field is the column's name,
+/// its header cell, and then the row's cell, the value.
+///
+/// Fields are laid out one of two ways, the same for every record of the
+/// table:
+///   - **Side by side**: the name, padded to the widest name, a gap, and
+///     the value, wrapped in the room after the names; its further lines
+///     start under its first.
+///   - **Stacked**: the name on a line of its own, the value under it,
+///     indented.
+///
+/// Side by side is used unless it would break a word or a character that
+/// the stacked value keeps whole, or leaves no room at all. A word wider
+/// than the stacked room breaks either way, so it does not decide.
+///
+/// An empty header cell, or a column past the header's last cell, has an
+/// empty name; when every name is empty, values start at the left edge.
+/// A field without a value is its name alone, so every record has the
+/// same lines in the same order, and a field without a name or a value
+/// is a blank line. A table without data rows is one record of its
+/// names. Delimiter-row alignment does not apply.
+///
+/// A line is wider than `width` only where one unit a word breaks into
+/// (see `break_units` in `render.rs`) is wider than the room it gets.
+fn layout_records(
+    rows: &[Vec<&[Node]>],
+    num_cols: usize,
+    width: usize,
+    render_cell: &impl Fn(&[Node], usize, LongWords) -> Vec<StyledLine>,
+) -> Vec<StyledLine> {
+    let header = &rows[0];
+    let records: Vec<Vec<&[Node]>> = if rows.len() > 1 {
+        rows[1..].to_vec()
+    } else {
+        vec![Vec::new()]
     };
-    let fits = |cap: usize| capped(cap).iter().sum::<usize>() <= budget;
 
-    // The smallest widths fit, so a cap of 1 does. Raise it while the
-    // next one still fits; at the widest minimum every column has its
-    // minimum, and a higher cap changes nothing.
-    let widest_minimum = minimum.iter().copied().max().unwrap_or(1);
-    let mut cap = 1;
-    while cap < widest_minimum && fits(cap + 1) {
-        cap += 1;
-    }
+    // ── Names and the room beside them ──────────────────────────────────
+    // A cell holds no line ending, so laid out without a width limit a
+    // name takes at most one line.
+    let names: Vec<StyledLine> = (0..num_cols)
+        .map(|i| match header.get(i) {
+            Some(cell) => render_cell(cell, UNLIMITED, LongWords::Overflow)
+                .into_iter()
+                .next()
+                .unwrap_or_default(),
+            None => StyledLine::default(),
+        })
+        .collect();
+    let name_width = widest(&names);
+    let gap = if name_width == 0 { 0 } else { RECORD_GAP };
+    let room = width.saturating_sub(name_width + gap);
 
-    // Raising the cap by one adds a column to each column at the cap and
-    // no longer fits, so fewer columns are left over than there are
-    // columns at the cap.
-    let mut result = capped(cap);
-    let mut leftover = budget - result.iter().sum::<usize>();
-    for i in 0..result.len() {
-        if leftover == 0 {
-            break;
+    // ── Side by side or stacked ─────────────────────────────────────────
+    // Laid out one column wide, a value puts every word on a line of its
+    // own, and with breaking every unit a word breaks into. Side by side
+    // would break such a word or unit, where the stacked value keeps it
+    // whole, when it is wider than the room beside the names and no wider
+    // than the room under them. `width` is at least 1, so the indent
+    // leaves the stacked value at least one column.
+    let indent = STACKED_INDENT.min(width.saturating_sub(1));
+    let stacked_room = width - indent;
+    let kept_whole_only_when_stacked = |piece: &StyledLine| {
+        let piece_width = piece.width();
+        room < piece_width && piece_width <= stacked_room
+    };
+    let stacked = room == 0
+        || records.iter().flatten().any(|cell| {
+            [LongWords::Overflow, LongWords::Break]
+                .into_iter()
+                .flat_map(|long_words| render_cell(cell, 1, long_words))
+                .any(|piece| kept_whole_only_when_stacked(&piece))
+        });
+
+    // ── Build the lines ─────────────────────────────────────────────────
+    let mut lines: Vec<StyledLine> = Vec::new();
+    for (record_idx, record) in records.iter().enumerate() {
+        if record_idx > 0 {
+            let mut rule = StyledLine::default();
+            rule.push_str(&RULE.repeat(width), RULE_STYLE);
+            lines.push(rule);
         }
-        if smallest[i] <= cap && cap < minimum[i] {
-            result[i] += 1;
-            leftover -= 1;
+        for (i, name) in names.iter().enumerate() {
+            let value = record.get(i);
+            if stacked {
+                if let Some(cell) = header.get(i) {
+                    lines.extend(
+                        render_cell(cell, width, LongWords::Break)
+                            .iter()
+                            .map(record_name),
+                    );
+                }
+                let value_lines = value
+                    .map(|cell| render_cell(cell, stacked_room, LongWords::Break))
+                    .unwrap_or_default();
+                lines.extend(value_lines.iter().map(|line| indented(line, indent)));
+            } else {
+                let mut value_lines = value
+                    .map(|cell| render_cell(cell, room, LongWords::Break))
+                    .unwrap_or_default()
+                    .into_iter();
+                let mut first = record_name(name);
+                if let Some(value_line) = value_lines.next() {
+                    let padding = name_width - name.width() + gap;
+                    first.push_str(&" ".repeat(padding), TextStyle::default());
+                    append(&mut first, &value_line);
+                }
+                lines.push(first);
+                lines.extend(value_lines.map(|line| indented(&line, name_width + gap)));
+            }
         }
     }
-    result
+    lines
+}
+
+/// A name line of a record: its spans with [`NAME_STYLE`] on top.
+fn record_name(name: &StyledLine) -> StyledLine {
+    let mut line = StyledLine::default();
+    for span in name {
+        line.push_str(&span.text, span.style.patch(NAME_STYLE));
+    }
+    line
+}
+
+/// `line` behind `columns` unstyled blanks.
+fn indented(line: &StyledLine, columns: usize) -> StyledLine {
+    let mut indented = StyledLine::default();
+    indented.push_str(&" ".repeat(columns), TextStyle::default());
+    append(&mut indented, line);
+    indented
+}
+
+/// Append the spans of `tail` to `line`.
+fn append(line: &mut StyledLine, tail: &StyledLine) {
+    for span in tail {
+        line.push_str(&span.text, span.style);
+    }
 }
 
 // =========================================================
@@ -384,11 +481,8 @@ fn row_line(
         line.push_str(" ", plain);
 
         let cell_line = wrapped[col].get(line_idx).unwrap_or(&empty);
-        // A line is wider than `width` only when the column is narrower
-        // than the widest piece a word breaks into, below the smallest
-        // widths of `shrink_below_minimums`. In that case we produce zero
-        // padding — the row will be wider than `width` for this line,
-        // which is the overflow fallback.
+        // No column is narrower than its widest word, so a line is never
+        // wider than `width`.
         let padding = width.saturating_sub(cell_line.width());
 
         // A column without an alignment centers its header and puts its
@@ -459,7 +553,7 @@ mod tests {
         let minimum = vec![1, 1, 1];
         let budget = 30;
         assert_eq!(
-            distribute_widths(&natural, &minimum, &[1, 1, 1], budget),
+            distribute_widths(&natural, &minimum, budget),
             vec![5, 10, 15]
         );
     }
@@ -468,55 +562,7 @@ mod tests {
     fn distribute_returns_minimum_when_it_matches_the_budget() {
         let natural = vec![10, 20, 30];
         let minimum = vec![5, 8, 12];
-        assert_eq!(
-            distribute_widths(&natural, &minimum, &[1, 1, 1], 25),
-            vec![5, 8, 12]
-        );
-    }
-
-    #[test]
-    fn distribute_shrinks_below_minimum_when_budget_too_small() {
-        // sum(minimum) = 25 > 20: the widest column gives up the most.
-        let natural = vec![10, 20, 30];
-        let minimum = vec![5, 8, 12];
-        assert_eq!(
-            distribute_widths(&natural, &minimum, &[1, 1, 1], 20),
-            vec![5, 8, 7]
-        );
-    }
-
-    // ── Shrinking below the widest words ────────────────────────────────
-
-    #[test]
-    fn shrinking_cuts_the_column_with_the_longest_word() {
-        assert_eq!(shrink_below_minimums(&[5, 54], &[1, 1], 33), [5, 28]);
-    }
-
-    #[test]
-    fn shrinking_keeps_columns_whose_words_fit() {
-        let minimum = [3, 10, 10];
-        assert_eq!(shrink_below_minimums(&minimum, &[1, 1, 1], 15), [3, 6, 6]);
-        // The column left over goes to the first column at the cap.
-        assert_eq!(shrink_below_minimums(&minimum, &[1, 1, 1], 16), [3, 7, 6]);
-    }
-
-    #[test]
-    fn shrinking_stops_at_the_widest_unit() {
-        let minimum = [8, 8];
-        assert_eq!(shrink_below_minimums(&minimum, &[2, 1], 4), [2, 2]);
-        assert_eq!(shrink_below_minimums(&minimum, &[2, 1], 3), [2, 1]);
-        // Not even the widest units fit: the table overflows.
-        assert_eq!(shrink_below_minimums(&minimum, &[2, 1], 2), [2, 1]);
-    }
-
-    #[test]
-    fn shrinking_gives_the_remainder_to_columns_at_the_cap() {
-        // The first column is held above the cap by its widest unit, so
-        // the column left over goes to the second.
-        assert_eq!(
-            shrink_below_minimums(&[10, 10, 10], &[4, 1, 1], 9),
-            [4, 3, 2]
-        );
+        assert_eq!(distribute_widths(&natural, &minimum, 25), vec![5, 8, 12]);
     }
 
     #[test]
@@ -529,7 +575,7 @@ mod tests {
         let natural = vec![10, 20, 30];
         let minimum = vec![1, 2, 3];
         let budget = 30;
-        let result = distribute_widths(&natural, &minimum, &[1, 1, 1], budget);
+        let result = distribute_widths(&natural, &minimum, budget);
         assert_eq!(result.iter().sum::<usize>(), 30);
         assert!(result[0] < result[1]);
         assert!(result[1] < result[2]);
@@ -546,7 +592,7 @@ mod tests {
         let natural = vec![8, 7, 5];
         let minimum = vec![1, 1, 1];
         let budget = 10;
-        let result = distribute_widths(&natural, &minimum, &[1, 1, 1], budget);
+        let result = distribute_widths(&natural, &minimum, budget);
         assert_eq!(result.iter().sum::<usize>(), 10);
         assert!(result.iter().zip(minimum.iter()).all(|(r, m)| r >= m));
         assert!(result.iter().zip(natural.iter()).all(|(r, n)| r <= n));

@@ -8,6 +8,8 @@ Accepted
 
 Amended in patine 1.7.2 (see the end)
 
+Amended by [14. Lay out a table as records when its columns would break words](0014-lay-out-a-table-as-records-when-its-columns-would-break-words.md)
+
 Amends [6. Render to style-neutral lines](0006-render-to-style-neutral-lines.md)
 
 Amends [8. Glued inline elements wrap as one word](0008-glued-inline-elements-wrap-as-one-word.md)

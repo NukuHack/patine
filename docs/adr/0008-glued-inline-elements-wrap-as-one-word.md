@@ -10,6 +10,8 @@ Amends [7. Render options for soft breaks and HTML](0007-render-options-for-soft
 
 Amended by [11. Table cells render as inline content](0011-table-cells-render-as-inline-content.md), also by its amendment in patine 1.7.2
 
+Amended by [14. Lay out a table as records when its columns would break words](0014-lay-out-a-table-as-records-when-its-columns-would-break-words.md)
+
 ## Context
 
 markdown-rs makes every inline element its own node. `foo**bar**` is

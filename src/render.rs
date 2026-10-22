@@ -78,7 +78,8 @@ enum Style {
 pub(crate) enum LongWords {
     /// The word overflows a line of its own, as in running text.
     Overflow,
-    /// The word is broken between characters, as in a table cell.
+    /// The word is broken between characters, as in a value of a table
+    /// laid out as records.
     Break,
 }
 
@@ -369,8 +370,8 @@ impl Renderer {
         self.ensure_block_spacing();
 
         // The table module lays out the table as a list of styled content
-        // lines (box-drawing characters, cell text, bold headers) without
-        // any per-line prefix. Each cell is laid out as running text by a
+        // lines (box-drawing characters, cell text, bold headers, or the
+        // lines of records) without any per-line prefix. Each cell is laid out as running text by a
         // renderer of its own, so it keeps its inline styles and wraps by
         // the same rules. We walk the lines here so that each one receives
         // the renderer's normal line prefix — nesting indent *and*
@@ -756,8 +757,9 @@ impl Renderer {
     /// word of its own, so text glued to the end of a link (`[link](u)s`)
     /// stays with it. In running text the URL itself is never broken
     /// mid-string — on a narrow terminal it may overflow its own line,
-    /// which is preferable to rendering it uncopyable. In a table cell it
-    /// breaks like any word wider than its column (see [`LongWords`]).
+    /// which is preferable to rendering it uncopyable. In a value of a
+    /// table laid out as records it breaks like any word wider than its
+    /// room (see [`LongWords`]).
     fn write_dimmed_url_suffix(&mut self, url: &str) {
         self.flush_word();
 
