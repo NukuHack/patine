@@ -43,12 +43,25 @@ pub struct RenderOptions {
 	pub html: Html,
 	/// How blockquotes look.
 	pub quote_style: QuoteStyle,
+	/// Force ASCII-only output: accented letters are transliterated to
+	/// their base form (`é` → `e`, `ß` → `ss`), common symbols map to
+	/// ASCII (`…` → `.`, `—` → `-`), and anything without an ASCII
+	/// equivalent becomes `?`. The `patine` binary exposes this as
+	/// `--ascii`.
+	pub ascii: bool,
 }
 
 impl RenderOptions {
 	/// The default options, usable in a `const`.
 	pub const fn new() -> Self {
-		Self { soft_breaks: SoftBreaks::Join, html: Html::Drop, quote_style: QuoteStyle::DEFAULT }
+		Self { soft_breaks: SoftBreaks::Join, html: Html::Drop, quote_style: QuoteStyle::DEFAULT, ascii: false }
+	}
+
+	/// These options with `ascii` replaced.
+	#[must_use]
+	pub const fn with_ascii(mut self, ascii: bool) -> Self {
+		self.ascii = ascii;
+		self
 	}
 
 	/// These options with `soft_breaks` replaced.

@@ -18,6 +18,12 @@ struct Cli {
 	/// Override the output width in columns. Defaults to the terminal width.
 	#[arg(short, long)]
 	width: Option<usize>,
+
+	/// Force ASCII-only output: transliterate accented letters to their
+	/// base form, map common symbols to ASCII, and replace anything
+	/// without an ASCII equivalent with `?`.
+	#[arg(short, long)]
+	ascii: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -38,8 +44,10 @@ fn main() -> anyhow::Result<()> {
 
 	let terminal_width = cli.width.unwrap_or_else(|| crossterm::terminal::size().map(|(cols, _)| cols as usize).unwrap_or(80));
 
+	let options = patine::RenderOptions::new().with_ascii(cli.ascii);
+
 	let mut stdout = io::stdout().lock();
-	patine::render(&markdown, &mut stdout, terminal_width)?;
+	patine::render_with(&markdown, &mut stdout, terminal_width, &options)?;
 	stdout.flush().context("flush stdout")?;
 
 	Ok(())

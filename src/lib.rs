@@ -46,6 +46,7 @@
 #![warn(missing_docs)]
 
 mod ansi;
+mod ascii;
 mod highlight;
 mod line_endings;
 mod options;
@@ -175,7 +176,13 @@ pub fn render_lines_with(input: &str, width: usize, options: &RenderOptions) -> 
 
 	let mut renderer = render::Renderer::new(width, *options);
 	renderer.render_node(&tree);
-	renderer.finish()
+	let mut lines = renderer.finish();
+	if options.ascii {
+		for line in &mut lines {
+			ascii::asciify_line(line);
+		}
+	}
+	lines
 }
 
 /// Syntax-highlight source code the way patine highlights fenced code
